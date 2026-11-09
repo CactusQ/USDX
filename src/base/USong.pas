@@ -137,6 +137,7 @@ type
   public
     Tracks: array of TLines; // Per-song track storage
     HasReading: boolean; // longq: a matching <chart>.reading was loaded
+    HasFurigana: boolean; // longq: the reading file carries kanji display text with ruby (v2)
   public
     Path:         IPath; // kust path component of file (only set if file was found)
     Folder:       UTF8String; // for sorting by folder (only set if file was found)
@@ -646,10 +647,12 @@ var
   F: TTextFileStream;
   Line: UTF8String;
   Tokens: array of UTF8String;
-  Count, Total, Expect, T, L, N, K: integer;
+  Count, Total, Expect, T, L, N, K, P: integer;
   InHeader: boolean;
+  ChartMD5: string;
 begin
   HasReading := false;
+  HasFurigana := false;
   ReadingPath := ChartPath.SetExtension('.reading');
   if not ReadingPath.IsFile then
     Exit;
@@ -666,6 +669,7 @@ begin
   end;
   Count := 0;
   Expect := -1;
+  ChartMD5 := '';
   InHeader := true;
   SetLength(Tokens, 0);
   try
@@ -679,6 +683,8 @@ begin
       begin
         if Copy(Line, 1, 7) = '#NOTES:' then
           Expect := StrToIntDef(Trim(Copy(Line, 8, MaxInt)), -1);
+        if Copy(Line, 1, 10) = '#CHARTMD5:' then
+          ChartMD5 := LowerCase(Trim(Copy(Line, 11, MaxInt)));
         Continue;
       end;
       InHeader := false;
@@ -690,6 +696,14 @@ begin
   finally
     F.Free;
   end;
+  // longq: a reading made from an older version of the chart never renders
+  if (ChartMD5 <> '') and (ChartMD5 <> LowerCase(MD5Print(MD5File(ChartPath.ToNative)))) then
+  begin
+    Log.LogWarn('reading file ignored: chart changed since it was generated (run longq/reading_gen.py): ' +
+      ReadingPath.ToNative, 'TSong.LoadReading');
+    Exit;
+  end;
+
   // tolerate one trailing empty line
   if (Count = Total + 1) and (Tokens[Count - 1] = '') then
     Dec(Count);
@@ -706,7 +720,21 @@ begin
     for L := 0 to High(Tracks[T].Lines) do
       for N := 0 to High(Tracks[T].Lines[L].Notes) do
       begin
-        Tracks[T].Lines[L].Notes[N].Reading := Tokens[K];
+        // v2 line: "<display text with {kanji|kana} ruby>" TAB "<romaji>"
+        P := Pos(#9, Tokens[K]);
+        if P > 0 then
+        begin
+          Tracks[T].Lines[L].Notes[N].Surface := Copy(Tokens[K], 1, P - 1);
+          Tracks[T].Lines[L].Notes[N].HasSurface := true;
+          Tracks[T].Lines[L].Notes[N].Reading := Copy(Tokens[K], P + 1, MaxInt);
+          HasFurigana := true;
+        end
+        else
+        begin
+          Tracks[T].Lines[L].Notes[N].Surface := '';
+          Tracks[T].Lines[L].Notes[N].HasSurface := false;
+          Tracks[T].Lines[L].Notes[N].Reading := Tokens[K];
+        end;
         Inc(K);
       end;
   HasReading := true;

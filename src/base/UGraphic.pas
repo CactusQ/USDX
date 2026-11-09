@@ -291,6 +291,10 @@ const
   Skin_P1_NotesB = 250;
   Skin_P2_NotesB = 430; // 430 / 300
 
+var
+  // longq: one-player note lanes move up by this much when the lyric bar grows for a reading line
+  LongqNotesShift: real = 0;
+
 procedure Initialize3D (Title: string);
 procedure Finalize3D;
 procedure Reinitialize3D;

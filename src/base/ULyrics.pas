@@ -40,11 +40,6 @@ uses
   UThemes,
   UMusic;
 
-const
-  // longq reading line: share of the lyric slot height
-  READING_MAIN_FRACTION = 0.62;
-  READING_FRACTION      = 0.36;
-
 type
   TLyricsEffect = (lfxSimple, lfxZoom, lfxSlide, lfxBall, lfxShift);
   
@@ -56,9 +51,13 @@ type
     Length:     Longint; // length of the word in quarters
     Text:       UTF8String; // text
     Freestyle:  boolean;  // is freestyle?
-    Reading:      UTF8String; // longq: reading token (romaji/kanji), may be empty
-    ReadingX:     real;
-    ReadingWidth: real;
+    Reading:      UTF8String; // longq: romanization token of this note ('' = none)
+    RubyPre:      UTF8String; // longq: text before the annotated base inside Text
+    RubyBase:     UTF8String; // annotated base (kanji for ruby, the whole word for romanization)
+    Ruby:         UTF8String; // kana ruby from a v2 reading file ('' = none)
+    Annot:        UTF8String; // shown annotation: Ruby in furigana mode, else Reading
+    AnnotX:       real;       // centre x of the annotation relative to the line
+    AnnotW:       real;
   end;
   TLyricWordArray = array of TLyricWord;
 
@@ -75,8 +74,6 @@ type
       Players:        byte;         // players that should sing that line (bitset, Player1: 1, Player2: 2, Player3: 4)
       LastLine:       boolean;      // is this the last line of the song?
       // longq reading line
-      ReadingText:    UTF8String;
-      ReadingWidth:   real;
       ReadingHeight:  real;
       HasReading:     boolean;
 
@@ -103,13 +100,17 @@ type
       procedure DrawLyricsWords(LyricLine: TLyricLine; X, Y: real; StartWord, EndWord: integer);
       procedure DrawLyricsLine(X, W, Y, H: real; Line: TLyricLine; Beat: real);
       procedure DrawBall(XBall, YBall, Alpha: real);
-      procedure DrawReadingWords(LyricLine: TLyricLine; X, Y: real; StartWord, EndWord: integer);
-      procedure DrawReadingLine(Line: TLyricLine; LyricX, ReadingY, Beat, Alpha: real; Active, IsUpper: boolean; LyricsEffect: TLyricsEffect);
+      procedure DrawAnnotations(Line: TLyricLine; LyricX, AnnotY, Alpha: real; Active, IsUpper: boolean;
+                                LyricsEffect: TLyricsEffect; Outline: TRGB);
 
     public
       // longq: 0 = no reading line, 1 = reading above the lyric, 2 = below.
       // Set per song (Ini.ReadingLine when the song has a reading file).
       ReadingMode:    integer;
+      ReadingScale:   real;    // longq: annotation size relative to the lyric (Ini.ReadingSize)
+      BaseLineH:      real;    // longq: stock slot height; the lyric keeps this size when the slot grows
+      // longq: draw the kanji display text with kana ruby (song has a v2 reading file + Ini.Furigana)
+      FuriganaMode:   boolean;
       // positions, line specific settings
       UpperLineX:     real;       // X start-pos of UpperLine
       UpperLineW:     real;       // Width of UpperLine with icon(s) and text
@@ -199,8 +200,6 @@ begin
   Text      := '';
   Width     := 0;
 
-  ReadingText   := '';
-  ReadingWidth  := 0;
   ReadingHeight := 0;
   HasReading    := false;
 
@@ -225,6 +224,9 @@ begin
   LCounter := 0;
   QueueFull := False;
   ReadingMode := 0;
+  FuriganaMode := false;
+  ReadingScale := 0.8;
+  BaseLineH := 0;
 
   UpperLine := TLyricLine.Create;
   LowerLine := TLyricLine.Create;
@@ -296,10 +298,13 @@ end;
  * If the queue is full the next call to AddLine will replace UpperLine with
  * LowerLine, LowerLine with QueueLine and QueueLine with the Line parameter.
  *}
+procedure SetSurface(var Word: TLyricWord; const Surface: UTF8String); forward;
+
 procedure TLyricEngine.AddLine(Line: PLine);
 var
   LyricLine: TLyricLine;
   NoteIndex: integer;
+  W: integer;
 begin
   // only add lines, if there is space
   if not IsQueueFull then
@@ -341,20 +346,56 @@ begin
 
     // copy words
     SetLength(LyricLine.Words, Length(Line.Notes));
+    W := -1;
     for NoteIndex := 0 to High(Line.Notes) do
     begin
-      LyricLine.Words[NoteIndex].Start     := Line.Notes[NoteIndex].StartBeat;
-      LyricLine.Words[NoteIndex].Length    := Line.Notes[NoteIndex].Duration;
-      LyricLine.Words[NoteIndex].Text      := Line.Notes[NoteIndex].Text;
-      LyricLine.Words[NoteIndex].Freestyle := Line.Notes[NoteIndex].NoteType = ntFreestyle;
-      LyricLine.Words[NoteIndex].Reading   := Line.Notes[NoteIndex].Reading;
+      // longq furigana: a note with empty display text continues the previous kanji word,
+      // so the word (and its slide highlight) spans all notes of its reading
+      if FuriganaMode and Line.Notes[NoteIndex].HasSurface and
+         (Line.Notes[NoteIndex].Surface = '') and (W >= 0) then
+      begin
+        with LyricLine.Words[W] do
+        begin
+          Length  := Line.Notes[NoteIndex].StartBeat + Line.Notes[NoteIndex].Duration - Start;
+          Reading := Reading + Line.Notes[NoteIndex].Reading;
+        end;
+        Continue;
+      end;
+      Inc(W);
+      LyricLine.Words[W].Start     := Line.Notes[NoteIndex].StartBeat;
+      LyricLine.Words[W].Length    := Line.Notes[NoteIndex].Duration;
+      LyricLine.Words[W].Text      := Line.Notes[NoteIndex].Text;
+      LyricLine.Words[W].Freestyle := Line.Notes[NoteIndex].NoteType = ntFreestyle;
+      LyricLine.Words[W].Reading   := Line.Notes[NoteIndex].Reading;
+      LyricLine.Words[W].RubyPre   := '';
+      LyricLine.Words[W].RubyBase  := '';
+      LyricLine.Words[W].Ruby      := '';
+      if FuriganaMode and Line.Notes[NoteIndex].HasSurface then
+        SetSurface(LyricLine.Words[W], Line.Notes[NoteIndex].Surface);
 
-      LyricLine.Text := LyricLine.Text + LyricLine.Words[NoteIndex].Text;
-      LyricLine.ReadingText := LyricLine.ReadingText + LyricLine.Words[NoteIndex].Reading;
+      LyricLine.Text := LyricLine.Text + LyricLine.Words[W].Text;
     end;
-    // only show a reading when it adds something (lines in Latin script stay single)
-    LyricLine.HasReading := (ReadingMode > 0) and (Trim(LyricLine.ReadingText) <> '') and
-                            (LyricLine.ReadingText <> LyricLine.Text);
+    SetLength(LyricLine.Words, W + 1);
+    // longq: annotation per word: kana ruby over kanji (furigana mode), else the romanization
+    // centred on the whole word; words whose reading equals the text (Latin) get none
+    LyricLine.HasReading := false;
+    for NoteIndex := 0 to High(LyricLine.Words) do
+      with LyricLine.Words[NoteIndex] do
+      begin
+        Annot := '';
+        if ReadingMode = 0 then
+          Continue;
+        if FuriganaMode then
+          Annot := Ruby
+        else if (Trim(Reading) <> '') and (Trim(Reading) <> Trim(Text)) then
+        begin
+          Annot := Trim(Reading);
+          RubyPre := Copy(Text, 1, System.Length(Text) - System.Length(TrimLeft(Text)));
+          RubyBase := Trim(Text);
+        end;
+        if Annot <> '' then
+          LyricLine.HasReading := true;
+      end;
 
     UpdateLineMetrics(LyricLine);
   end;
@@ -421,6 +462,8 @@ var
   TextSoFar: UTF8String;
   CurWord: PLyricWord;
   RequestWidth, RequestHeight: real;
+  Pass: integer;
+  Shift, Pad, Pre, BaseW: real;
 begin
   PosX := 0;
   TextSoFar := '';
@@ -446,70 +489,88 @@ begin
   //end;
 
   // set font size to a reasonable value
-  LyricLine.Height := RequestHeight * 0.9;
-  // longq: with a reading line the slot is shared: ~62% lyric, ~36% reading
-  if ReadingMode > 0 then
-    LyricLine.Height := RequestHeight * 0.9 * READING_MAIN_FRACTION;
-  SetFontSize(LyricLine.Height);
-  LyricLine.Width := TextWidth(LyricLine.Text);
+  // longq: a reading annotation gets its own band, the lyric keeps the stock size
+  if (ReadingMode > 0) and (BaseLineH > 0) then
+    LyricLine.Height := BaseLineH * 0.9
+  else
+    LyricLine.Height := RequestHeight * 0.9;
 
-  // change font-size to fit into the lyric bar
-  if (LyricLine.Width > RequestWidth) then
+  for Pass := 1 to 2 do
   begin
-    LyricLine.Height := Trunc(LyricLine.Height * (RequestWidth / LyricLine.Width));
-    // the line is very loooong, set font to at least 1px
-    if (LyricLine.Height < 1) then
-      LyricLine.Height := 1;
-
+    SetFontItalic(false);
     SetFontSize(LyricLine.Height);
     LyricLine.Width := TextWidth(LyricLine.Text);
-  end;
 
-  // calc word positions and widths
-  for I := 0 to High(LyricLine.Words) do
-  begin
-    CurWord := @LyricLine.Words[I];
-
-    // - if current word is italic but not the next word get the width of the
-    // italic font to avoid overlapping.
-    if CurWord.Freestyle then
-      SetFontItalic(true);
-
-    CurWord.Width := TextWidth(CurWord.Text);
-    TextSoFar := TextSoFar + CurWord.Text;
-    CurWord.X := PosX + TextWidth(TextSoFar) - CurWord.Width;
-    SetFontItalic(false);
-
-    if (I+1 < Length(LyricLine.Words)) and
-       (CurWord.Freestyle <> LyricLine.Words[I+1].Freestyle) then
+    // change font-size to fit into the lyric bar
+    if (Pass = 1) and (LyricLine.Width > RequestWidth) then
     begin
-      PosX := CurWord.X + CurWord.Width;
-      TextSoFar := '';
-    end;
-  end;
+      LyricLine.Height := Trunc(LyricLine.Height * (RequestWidth / LyricLine.Width));
+      // the line is very loooong, set font to at least 1px
+      if (LyricLine.Height < 1) then
+        LyricLine.Height := 1;
 
-  // longq: reading line metrics (one continuous, centered text)
-  if LyricLine.HasReading then
-  begin
-    SetFontItalic(false);
-    LyricLine.ReadingHeight := RequestHeight * READING_FRACTION;
-    SetFontSize(LyricLine.ReadingHeight);
-    LyricLine.ReadingWidth := TextWidth(LyricLine.ReadingText);
-    if (LyricLine.ReadingWidth > RequestWidth) then
-    begin
-      LyricLine.ReadingHeight := Max(1, Trunc(LyricLine.ReadingHeight * (RequestWidth / LyricLine.ReadingWidth)));
-      SetFontSize(LyricLine.ReadingHeight);
-      LyricLine.ReadingWidth := TextWidth(LyricLine.ReadingText);
+      SetFontSize(LyricLine.Height);
+      LyricLine.Width := TextWidth(LyricLine.Text);
     end;
+
+    // calc word positions and widths
+    PosX := 0;
     TextSoFar := '';
     for I := 0 to High(LyricLine.Words) do
     begin
       CurWord := @LyricLine.Words[I];
-      CurWord.ReadingWidth := TextWidth(CurWord.Reading);
-      TextSoFar := TextSoFar + CurWord.Reading;
-      CurWord.ReadingX := TextWidth(TextSoFar) - CurWord.ReadingWidth;
+
+      // - if current word is italic but not the next word get the width of the
+      // italic font to avoid overlapping.
+      if CurWord.Freestyle then
+        SetFontItalic(true);
+
+      CurWord.Width := TextWidth(CurWord.Text);
+      TextSoFar := TextSoFar + CurWord.Text;
+      CurWord.X := PosX + TextWidth(TextSoFar) - CurWord.Width;
+      SetFontItalic(false);
+
+      if (I+1 < Length(LyricLine.Words)) and
+         (CurWord.Freestyle <> LyricLine.Words[I+1].Freestyle) then
+      begin
+        PosX := CurWord.X + CurWord.Width;
+        TextSoFar := '';
+      end;
     end;
+
+    if not LyricLine.HasReading then
+      Break;
+
+    // longq: per-word annotation (kana ruby over kanji, or romanization per syllable block),
+    // centred over its base; words move apart where an annotation is wider than its base
+    LyricLine.ReadingHeight := LyricLine.Height * ReadingScale;
+    Shift := 0;
+    for I := 0 to High(LyricLine.Words) do
+    begin
+      CurWord := @LyricLine.Words[I];
+      CurWord.X := CurWord.X + Shift;
+      if CurWord.Annot = '' then
+        Continue;
+      SetFontSize(LyricLine.Height);
+      Pre := TextWidth(CurWord.RubyPre);
+      BaseW := TextWidth(CurWord.RubyBase);
+      SetFontSize(LyricLine.ReadingHeight);
+      CurWord.AnnotW := TextWidth(CurWord.Annot);
+      Pad := CurWord.AnnotW + LyricLine.ReadingHeight * 0.25 - BaseW;
+      if Pad > 0 then
+      begin
+        CurWord.X := CurWord.X + Pad / 2;
+        Shift := Shift + Pad;
+      end;
+      CurWord.AnnotX := CurWord.X + Pre + BaseW / 2;
+    end;
+    LyricLine.Width := LyricLine.Width + Shift;
+    if (LyricLine.Width <= RequestWidth) or (Pass = 2) then
+      Break;
+    // too wide with the padding: shrink both and lay out again
+    LyricLine.Height := Max(1, Trunc(LyricLine.Height * (RequestWidth / LyricLine.Width)));
   end;
+  SetFontItalic(false);
 end;
 
 procedure TLyricEngine.UpdateLineMetrics();
@@ -604,16 +665,16 @@ begin
   LyricX := X + (W - Line.Width) / 2;
   LyricY := Y + (H - Line.Height) / 2;
   ReadingY := LyricY;
-  // longq: share the slot with the reading line
+  // longq: annotation band above or below the lyric, tight to it
   if ReadingMode = 1 then
   begin
-    ReadingY := Y + H * 0.02;
-    LyricY   := Y + H * (0.02 + READING_FRACTION);
+    ReadingY := Y + H * 0.01;
+    LyricY   := ReadingY + Line.Height * ReadingScale * 0.98;
   end
   else if ReadingMode = 2 then
   begin
-    LyricY   := Y + H * 0.02;
-    ReadingY := LyricY + Line.Height;
+    LyricY   := Y + H * 0.01;
+    ReadingY := LyricY + Line.Height * 0.98;
   end;
   // get lyrics effect
 
@@ -804,69 +865,74 @@ begin
 
   end;
 
-  // longq: reading line, highlighted in sync with the lyric
+  // longq: annotations (ruby / romanization), highlighted with the sung word
   if Line.HasReading then
-  begin
-    SetOutlineColor(OutlineColor_en.R, OutlineColor_en.G, OutlineColor_en.B, Alpha);
-    DrawReadingLine(Line, X + (W - Line.ReadingWidth) / 2, ReadingY, Beat, Alpha,
-                    Beat >= Line.StartNote, Line = UpperLine, LyricsEffect);
-  end;
+    DrawAnnotations(Line, LyricX, ReadingY, Alpha, Beat >= Line.StartNote, Line = UpperLine,
+                    LyricsEffect, OutlineColor_en);
 
   // reset
   SetOutlineColor(0,0,0,-1);
 
 end;
 
-procedure TLyricEngine.DrawReadingWords(LyricLine: TLyricLine;
-    X, Y: real; StartWord, EndWord: integer);
+{**
+ * longq: splits a v2 reading-file display text "pre(kanji-bar-kana in braces)post" into the words
+ * text and ruby. Text without markup is shown as is.
+ *}
+procedure SetSurface(var Word: TLyricWord; const Surface: UTF8String);
 var
-  I: integer;
+  B, P, E: integer;
 begin
-  for I := StartWord to EndWord do
-    if LyricLine.Words[I].Reading <> '' then
-    begin
-      SetFontPos(X + LyricLine.Words[I].ReadingX, Y);
-      PrintText(LyricLine.Words[I].Reading);
-    end;
+  B := Pos('{', Surface);
+  P := Pos('|', Surface);
+  E := Pos('}', Surface);
+  if (B > 0) and (P > B) and (E > P) then
+  begin
+    Word.RubyPre  := Copy(Surface, 1, B - 1);
+    Word.RubyBase := Copy(Surface, B + 1, P - B - 1);
+    Word.Ruby     := Copy(Surface, P + 1, E - P - 1);
+    Word.Text     := Word.RubyPre + Word.RubyBase + Copy(Surface, E + 1, MaxInt);
+  end
+  else
+    Word.Text := Surface;
 end;
 
 {**
- * longq: draws the reading line of Line. Sung tokens use the active colour for
- * effects that keep sung words lit (zoom/slide), the current token is always
- * active; a note without its own reading token keeps the previous token lit.
+ * longq: per-word annotations centred over (or under) their base. Sung words keep the
+ * active colour for effects that keep sung words lit, the current word is active.
  *}
-procedure TLyricEngine.DrawReadingLine(Line: TLyricLine; LyricX, ReadingY, Beat, Alpha: real;
-    Active, IsUpper: boolean; LyricsEffect: TLyricsEffect);
+procedure TLyricEngine.DrawAnnotations(Line: TLyricLine; LyricX, AnnotY, Alpha: real; Active, IsUpper: boolean;
+    LyricsEffect: TLyricsEffect; Outline: TRGB);
 var
-  Cur: integer;
+  I, Cur: integer;
+  Col: TRGBA;
 begin
   SetFontItalic(false);
   SetFontSize(Line.ReadingHeight);
-  if not Active then
-  begin
-    if IsUpper then
-      SetFontColor(LineColor_en.R, LineColor_en.G, LineColor_en.B, Alpha)
-    else
-      SetFontColor(LineColor_dis.R, LineColor_dis.G, LineColor_dis.B, Alpha);
-    DrawReadingWords(Line, LyricX, ReadingY, 0, High(Line.Words));
-    Exit;
-  end;
-
-  Cur := Max(0, Line.CurWord);
-  while (Cur > 0) and (Line.Words[Cur].Reading = '') do
-    Dec(Cur);
-
-  if LyricsEffect in [lfxZoom, lfxSlide] then
-    SetFontColor(LineColor_act.R, LineColor_act.G, LineColor_act.B, Alpha)
+  SetOutlineColor(Outline.R, Outline.G, Outline.B, Alpha);
+  if Active then
+    Cur := Max(0, Line.CurWord)
   else
-    SetFontColor(LineColor_en.R, LineColor_en.G, LineColor_en.B, Alpha);
-  DrawReadingWords(Line, LyricX, ReadingY, 0, Cur - 1);
-
-  SetFontColor(LineColor_en.R, LineColor_en.G, LineColor_en.B, Alpha);
-  DrawReadingWords(Line, LyricX, ReadingY, Cur + 1, High(Line.Words));
-
-  SetFontColor(LineColor_act.R, LineColor_act.G, LineColor_act.B, Alpha);
-  DrawReadingWords(Line, LyricX, ReadingY, Cur, Cur);
+    Cur := -1;
+  for I := 0 to High(Line.Words) do
+    with Line.Words[I] do
+    begin
+      if Annot = '' then
+        Continue;
+      if not Active then
+      begin
+        if IsUpper then Col := LineColor_en else Col := LineColor_dis;
+      end
+      else if I = Cur then
+        Col := LineColor_act
+      else if (I < Cur) and (LyricsEffect in [lfxZoom, lfxSlide]) then
+        Col := LineColor_act
+      else
+        Col := LineColor_en;
+      SetFontColor(Col.R, Col.G, Col.B, Alpha);
+      SetFontPos(LyricX + AnnotX - AnnotW / 2, AnnotY);
+      PrintText(Annot);
+    end;
 end;
 
 {**

@@ -991,10 +991,10 @@ var
   Pos: real;
 begin
   Pos := AudioPlayback.Position;
-  if (Pos > ScreenSing.FirstNote) then
+  if (Pos > ScreenSing.CountInTarget) or (ScreenSing.CountInTarget - Pos > 5.5) then
     ScreenSing.CountIn := false
   else
-    DrawCountdown(ScreenSing.FirstNote - Pos);
+    DrawCountdown(ScreenSing.CountInTarget - Pos);
 
 end;
 

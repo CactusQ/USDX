@@ -204,6 +204,8 @@ type
       LyricsEffect:   integer;
       NoteLines:      integer;
       ReadingLine:    integer; // longq: 0 off, 1 above, 2 below
+      Furigana:       integer; // longq: 0 kana only, 1 kanji with kana ruby (when the reading file has it)
+      ReadingSize:    integer; // longq: index into IReadingSize (annotation size vs lyric)
 
       // Themes
       Theme:          integer;
@@ -426,6 +428,9 @@ const
 
   INoteLines:     array[0..1] of UTF8String = ('Off', 'On');
   IReadingLine:   array[0..2] of UTF8String = ('Off', 'Above', 'Below');
+  IFurigana:      array[0..1] of UTF8String = ('Off', 'On');
+  IReadingSize:   array[0..5] of UTF8String = ('50%', '60%', '70%', '80%', '90%', '100%');
+  IReadingSizeVals: array[0..5] of real = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0);
 
   // for lyric colors
   ILine:             array[0..2] of UTF8String = ('Sing', 'Actual', 'Next');
@@ -537,6 +542,7 @@ var
   ILyricsEffectTranslated:     array[0..4] of UTF8String = ('Simple', 'Zoom', 'Slide', 'Ball', 'Shift');
   INoteLinesTranslated:        array[0..1] of UTF8String = ('Off', 'On');
   IReadingLineTranslated:      array[0..2] of UTF8String = ('Off', 'Above', 'Below');
+  IFuriganaTranslated:         array[0..1] of UTF8String = ('Off', 'On');
   IColorTranslated:            array[0..8] of UTF8String = ('Blue', 'Green', 'Pink', 'Red', 'Violet', 'Orange', 'Yellow', 'Brown', 'Black');
   IPlayerColorTranslated:      array[0..15] of UTF8String = ('Blue', 'Red', 'Green', 'Yellow', 'Orange', 'Pink',  'Violet', 'Brown', 'Gray', 'Dark Blue', 'Sky', 'Cyan', 'Flame', 'Orchid', 'Harlequin', 'Lime');
 
@@ -779,6 +785,8 @@ begin
   IReadingLineTranslated[0]           := ULanguage.Language.Translate('OPTION_VALUE_OFF');
   IReadingLineTranslated[1]           := ULanguage.Language.Translate('OPTION_VALUE_READING_ABOVE');
   IReadingLineTranslated[2]           := ULanguage.Language.Translate('OPTION_VALUE_READING_BELOW');
+  IFuriganaTranslated[0]              := ULanguage.Language.Translate('OPTION_VALUE_OFF');
+  IFuriganaTranslated[1]              := ULanguage.Language.Translate('OPTION_VALUE_ON');
 
   for I := 0 to 255 do
   begin
@@ -1674,6 +1682,8 @@ begin
 
   // longq: reading line (romaji/kanji) from <chart>.reading, default above
   ReadingLine := ReadArrayIndex(IReadingLine, IniFile, 'Lyrics', 'ReadingLine', 1);
+  Furigana := ReadArrayIndex(IFurigana, IniFile, 'Lyrics', 'Furigana', 1);
+  ReadingSize := ReadArrayIndex(IReadingSize, IniFile, 'Lyrics', 'ReadingSize', 3);
 
   // DefaultEncoding
   DefaultEncoding := ParseEncoding(IniFile.ReadString('Lyrics', 'Encoding', ''), encAuto);
@@ -2006,6 +2016,8 @@ begin
 
     // longq: reading line
     IniFile.WriteString('Lyrics', 'ReadingLine', IReadingLine[ReadingLine]);
+    IniFile.WriteString('Lyrics', 'Furigana', IFurigana[Furigana]);
+    IniFile.WriteString('Lyrics', 'ReadingSize', IReadingSize[ReadingSize]);
 
     //Encoding default
     IniFile.WriteString('Lyrics', 'Encoding', EncodingName(DefaultEncoding));

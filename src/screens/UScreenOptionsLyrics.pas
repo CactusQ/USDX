@@ -96,6 +96,9 @@ type
     iStyleSlide,
     iEffectSlide,
     iNoteLinesSlide,
+    iReadingSlide,  // longq
+    iFuriganaSlide, // longq
+    iReadingSizeSlide, // longq
     iBackButton
   );
 
@@ -340,6 +343,8 @@ begin
   AddSelectSlide('SING_OPTIONS_LYRICS_EFFECT', Ini.LyricsEffect, ILyricsEffectTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_NOTELINES', Ini.NoteLines, INoteLinesTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_READING', Ini.ReadingLine, IReadingLineTranslated);
+  AddSelectSlide('SING_OPTIONS_LYRICS_FURIGANA', Ini.Furigana, IFuriganaTranslated);
+  AddSelectSlide('SING_OPTIONS_LYRICS_READING_SIZE', Ini.ReadingSize, IReadingSize);
 end;
 
 end.

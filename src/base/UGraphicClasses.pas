@@ -708,7 +708,7 @@ begin
       // calculate area where notes of this player are drawn
       case PlayersPlay of
         1: begin
-             Bottom := Skin_P2_NotesB+10;
+             Bottom := Skin_P2_NotesB+10 - Round(LongqNotesShift);
              Top := Bottom-105;
              cScreen := 1;
            end;

@@ -1037,8 +1037,9 @@ begin
         else
           Bounds.Top := Theme.LyricBarDuetP2.IndicatorYOffset + Theme.LyricBarDuetP2.UpperY ;
       end
-      else
-        Bounds.Top := Theme.LyricBar.IndicatorYOffset + Theme.LyricBar.UpperY ;
+      else // longq: follow the engine's slot (it grows when a reading line / furigana is shown)
+        Bounds.Top := Theme.LyricBar.IndicatorYOffset + LyricEngine.UpperLineY +
+                      (LyricEngine.UpperLineH - Theme.LyricBar.UpperH) / 2;
 
       Bounds.Bottom := Bounds.Top + BarHeight + 3;
 
@@ -1204,7 +1205,7 @@ begin
 
   // to-do : needs fix when party mode works w/ 2 screens
   if (PlayersPlay = 1) and (Ini.NoteLines = 1) and (ScreenSing.settings.NotesVisible[0]) then
-    SingDrawNoteLines(NR.Left, Skin_P2_NotesB - 105, NR.Right, 15);
+    SingDrawNoteLines(NR.Left, Skin_P2_NotesB - 105 - LongqNotesShift, NR.Right, 15);
 
   if (PlayersPlay = 2) and (Ini.NoteLines = 1) then
   begin
@@ -1409,9 +1410,9 @@ begin
   if (PlayersPlay = 1) then
   begin
     // SINGLESCREEN
-    SingDrawPlayerBGLine(NR.Left + 20, TopOneRow1, NR.Right - 20, TrackP1, 0, LineSpacingOneRow);  // Background glow    - colorized in playercolor
-    SingDrawLine(NR.Left + 20, TopOneRow1, NR.Right - 20, TrackP1, 0, LineSpacingOneRow);             // Plain unsung notes - colorized in playercolor
-    SingDrawPlayerLine(NR.Left + 20, TopOneRow1, NR.Width - 40, TrackP1, 0, LineSpacingOneRow);       // imho the sung notes
+    SingDrawPlayerBGLine(NR.Left + 20, TopOneRow1 - LongqNotesShift, NR.Right - 20, TrackP1, 0, LineSpacingOneRow);  // Background glow    - colorized in playercolor
+    SingDrawLine(NR.Left + 20, TopOneRow1 - LongqNotesShift, NR.Right - 20, TrackP1, 0, LineSpacingOneRow);             // Plain unsung notes - colorized in playercolor
+    SingDrawPlayerLine(NR.Left + 20, TopOneRow1 - LongqNotesShift, NR.Width - 40, TrackP1, 0, LineSpacingOneRow);       // imho the sung notes
   end;
 
   if (PlayersPlay = 2) then

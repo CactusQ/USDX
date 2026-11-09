@@ -95,6 +95,8 @@ type
     Tone:           integer;    // full range tone
     Text:           UTF8String; // text assigned to this fragment (a syllable, word, etc.)
     Reading:        UTF8String; // longq: optional reading (romaji/kanji) from <chart>.reading
+    Surface:        UTF8String; // longq: display text with {kanji|kana} ruby markup (v2 reading file)
+    HasSurface:     boolean;
     NoteType:       TNoteType;  // note-type: golden-note/freestyle etc.
 
     IsMedley:       boolean; // just for editor

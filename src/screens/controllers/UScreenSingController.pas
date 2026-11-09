@@ -76,6 +76,7 @@ type
     StartNote, EndNote:     TPos;
     fCountIn: boolean;
     fStartTime, fFirstNote: real;
+    fCountInTarget: real; // longq: note the count-in runs into (first note, or the S-skip target)
 
     procedure LoadNextSong();
     procedure SongError();
@@ -86,13 +87,13 @@ type
     // longq seek: jump within the song without counting jumped-over notes as misses
     procedure SeekResetSkips();
     procedure SeekMarkSkipped(FromBeat, ToBeat: integer);
-    procedure SeekTo(NewPosition: real);
     procedure SkipIntro();
   public
     // longq seek: per track, note value / lines removed from the max score by seeking
     SeekSkippedValue: array [0..1] of integer;
     SeekSkippedLines: array [0..1] of integer;
     SeekLineSkipped:  array [0..1] of array of boolean;
+    procedure SeekTo(NewPosition: real);
     function SeekScoreValue(Track: integer): integer;
   public
     CheckPlayerConfigOnNextSong: boolean;
@@ -199,6 +200,7 @@ type
     procedure OnSentenceChange(Track: integer; SentenceIndex: cardinal);  // for golden notes
     property CountIn: boolean read fCountIn write fCountIn;
     property FirstNote: real read fFirstNote;
+    property CountInTarget: real read fCountInTarget;
   end;
 
 var screenSingViewRef: TScreenSingView;
@@ -283,6 +285,7 @@ begin
         end;
         SeekResetSkips();
         AudioPlayback.SetPosition(fStartTime);
+        fCountInTarget := fFirstNote;
         if (fStartTime < CurrentSong.Start) then
           fCountIn := true;
         if (Assigned(fCurrentVideo)) then
@@ -1475,33 +1478,85 @@ end;
 
 // jump to ~2 s before the next sung line when that is more than 5 s away
 procedure TScreenSingController.SkipIntro();
+const
+  SKIP_MIN_AHEAD = 7.0;
 var
+  T, L, N, NextBeat: integer;
   NextNote: real;
 begin
-  if not CurrentSong.isDuet then
-    NextNote := GetTimeFromBeat(Lyrics.GetUpperLine().StartNote)
-  else
-    NextNote := GetTimeFromBeat(Min(LyricsDuetP1.GetUpperLine().StartNote,
-                                    LyricsDuetP2.GetUpperLine().StartNote));
-  if NextNote - AudioPlayback.Position > 5 then
-    SeekTo(NextNote - 2);
+  // longq: S = jump to 5 s before the NEXT note (any point in the song, not only the intro),
+  // then run the normal count-in into that note. Nothing happens if it is < 7 s away.
+  if Paused or (ScreenSong.Mode = smMedley) then
+    Exit;
+  NextBeat := MaxInt;
+  for T := 0 to High(CurrentSong.Tracks) do
+    for L := 0 to High(CurrentSong.Tracks[T].Lines) do
+      for N := 0 to High(CurrentSong.Tracks[T].Lines[L].Notes) do
+        with CurrentSong.Tracks[T].Lines[L].Notes[N] do
+          if (StartBeat > LyricsState.CurrentBeatD) and (StartBeat < NextBeat) and (Duration > 0) then
+            NextBeat := StartBeat;
+  if NextBeat = MaxInt then
+    Exit;
+  NextNote := GetTimeFromBeat(NextBeat);
+  // only worth it when it saves >= 2 s (the jump lands 5 s before the note)
+  if NextNote - AudioPlayback.Position < SKIP_MIN_AHEAD then
+    Exit;
+  SeekTo(NextNote - 5);
+  fCountInTarget := NextNote;
+  fCountIn := true;
 end;
 
 procedure TScreenSingController.ClearLyricEngines();
 var
-  ReadingMode: integer;
+  ReadingMode, G: integer;
+  Furigana, Grow: boolean;
 begin
   Lyrics.Clear(CurrentSong.BPM);
   LyricsDuetP1.Clear(CurrentSong.BPM);
   LyricsDuetP2.Clear(CurrentSong.BPM);
 
-  // longq: reading line only for songs with a matching .reading
+  // longq: annotations only for songs with a matching .reading. Furigana mode (kanji + kana
+  // ruby) puts the ruby above; otherwise the romanization goes above/below per Ini.ReadingLine.
+  Furigana := CurrentSong.HasReading and CurrentSong.HasFurigana and (Ini.Furigana = 1);
   ReadingMode := 0;
-  if CurrentSong.HasReading then
+  if Furigana then
+    ReadingMode := 1
+  else if CurrentSong.HasReading then
     ReadingMode := Ini.ReadingLine;
   Lyrics.ReadingMode := ReadingMode;
+  Lyrics.FuriganaMode := Furigana;
+  Lyrics.ReadingScale := IReadingSizeVals[Ini.ReadingSize];
   LyricsDuetP1.ReadingMode := ReadingMode;
+  LyricsDuetP1.FuriganaMode := Furigana;
+  LyricsDuetP1.ReadingScale := IReadingSizeVals[Ini.ReadingSize];
   LyricsDuetP2.ReadingMode := ReadingMode;
+  LyricsDuetP2.FuriganaMode := Furigana;
+  LyricsDuetP2.ReadingScale := IReadingSizeVals[Ini.ReadingSize];
+  Lyrics.BaseLineH := Theme.LyricBar.UpperH;
+  LyricsDuetP1.BaseLineH := Theme.LyricBar.UpperH;
+  LyricsDuetP2.BaseLineH := Theme.LyricBar.UpperH;
+
+  // longq: the annotation band needs room: each single-player slot grows by the annotation
+  // size, upwards (bar bottom stays put); the one-player note lanes move up into the space
+  // the theme leaves free above the bar (~32 units) only for what is left over
+  Grow := (ReadingMode > 0) and not (CurrentSong.isDuet and (PlayersPlay <> 1));
+  if Grow then
+    G := Round(Theme.LyricBar.UpperH * 0.9 * IReadingSizeVals[Ini.ReadingSize]) + 2
+  else
+    G := 0;
+  Lyrics.UpperLineH := Theme.LyricBar.UpperH + G;
+  Lyrics.LowerLineH := Theme.LyricBar.LowerH + G;
+  Lyrics.LowerLineY := Theme.LyricBar.LowerY - G;
+  Lyrics.UpperLineY := Theme.LyricBar.UpperY - 2 * G;
+  if Grow and (PlayersPlay = 1) then
+    LongqNotesShift := Max(0, 2 * G - 30)
+  else
+    LongqNotesShift := 0;
+  with Statics[screenSingViewRef.StaticLyricsBar].Texture do
+  begin
+    Y := Theme.Sing.StaticLyricsBar.Y - 2 * G;
+    H := Theme.Sing.StaticLyricsBar.H + 2 * G;
+  end;
 end;
 
 procedure TScreenSingController.CalculateStartTime;
@@ -1512,6 +1567,7 @@ begin
   for I := Low(CurrentSong.Tracks) to High(CurrentSong.Tracks) do
     StartBeat := Min(StartBeat, CurrentSong.Tracks[I].Lines[0].Notes[0].StartBeat);
   fFirstNote := (CurrentSong.GAP / 1000) + ((StartBeat * 60) / CurrentSong.BPM);
+  fCountInTarget := fFirstNote;
   if ((fFirstNote - CurrentSong.Start) < MINIMUM_START_TIME) then
     fStartTime := fFirstNote - MINIMUM_START_TIME
   else

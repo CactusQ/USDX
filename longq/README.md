@@ -5,9 +5,9 @@ Branch `longq` = upstream + our commits (subject prefix `longq:`, one per featur
 | commit | what |
 |---|---|
 | separate macOS data/log dir | `~/Library/Application Support/UltraStar Deluxe longq`, `~/Library/Logs/UltraStar Deluxe longq`; stock app data untouched |
-| seek | Right/Left (or Ctrl+Right/Left) = +/-5 s, S = skip to 2 s before the next line when it is >5 s away; skipped notes are not misses |
+| seek | Right/Left (or Ctrl+Right/Left) = +/-5 s; S = jump to 5 s before the next note (any track) when it is >= 7 s away, count-in runs into that note; Shift+S still toggles scores; skipped notes are not misses |
 | build tooling | `kit.sh`, `env.sh`, `rebuild.sh`, `selftest.sh` |
-| reading line | optional `<chart>.reading` file, Options > Lyrics > Reading line: Off / Above / Below |
+| reading line | optional `<chart>.reading` file: per-word annotation centred on its base (kana ruby over kanji, or romanization per syllable block), highlighted with the lyric. Options > Lyrics: Reading line Off / Above / Below, Kanji + furigana On/Off, Reading size 50-100% (default 80%). The lyric keeps its stock size; the bar grows and the 1-player note lanes move up |
 | self-test | `LONGQ_AUTOTEST=1` scripted run (off by default) |
 
 ## Rebuild
@@ -38,16 +38,20 @@ git push -f origin longq                        # after a successful rebase
 ## Reading file format (`<chart>.reading`, next to `<chart>.txt`)
 
 ```
-#READING:1          header lines start with '#', any order, optional
+#READING:1|2        header lines start with '#', any order, optional
+#CHARTMD5:<md5>     md5 of the chart bytes; a mismatch disables the reading (stale, logged)
 #NOTES:492          if present, must equal the chart's note count
-See                 then exactly one line per note, chart order (P1 notes, then P2)
- what               leading space = word break, as in the chart
-                    empty line = no reading for that note (the previous token stays lit)
+v1: one romanization token per note, chart order (P1 notes, then P2); leading space = word break
+v2: "display<TAB>romanization" per note; display = the note text with "{kanji|kana}" ruby,
+    empty display = the note continues the previous kanji word
 ```
 
-Not `*.txt`, so neither app lists it as a song. A count mismatch disables it for that song (logged).
-Lines whose reading equals the lyric (Latin lines) show no second line.
+Not `*.txt`, so neither app lists it as a song. A count or hash mismatch disables it (logged).
+Words whose reading equals the text (Latin) get no annotation.
 
-Generator: `longq/reading_gen.py CHART.txt` or `--all SONGS_DIR` (deterministic: kana -> Hepburn,
-Hangul -> Revised Romanization, Han -> pinyin for `#LANGUAGE:Chinese`, via the chart pipeline's
-`romaji.py`, sha stamped in the header).
+Generator: `longq/reading_gen.py CHART.txt` or `--all SONGS_DIR [--force]`, deterministic, atomic writes
+(never through a hardlink). Kana -> Hepburn, Hangul -> Revised Romanization, Han -> pinyin for
+`#LANGUAGE:Chinese` (needs pypinyin: `python3 -m venv longq/.venv && longq/.venv/bin/pip install pypinyin`),
+via the chart pipeline's `romaji.py` (sha in the header). Japanese kanji ruby: inline `漢字(かな)` in the
+chart, else the pipeline's `lrclib_orig.json` aligned to the chart kana, else kanji typed in the chart read
+by the macOS tokenizer (`ja_tokens.py`, Apple `/usr/bin/python3` + pyobjc).
