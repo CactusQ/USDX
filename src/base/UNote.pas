@@ -579,7 +579,7 @@ begin
                 // gets for a hit of one beat of a normal note
                 // CurNotePoints is the amount of points that is meassured
                 // for a hit of the note per full beat
-                CurNotePoints := (MaxSongPoints / CurrentSong.Tracks[CP].ScoreValue) * ScoreFactor[CurrentLineFragment.NoteType];
+                CurNotePoints := (MaxSongPoints / Screen.SeekScoreValue(CP)) * ScoreFactor[CurrentLineFragment.NoteType];
 
                 case CurrentLineFragment.NoteType of
                   ntNormal:    CurrentPlayer.Score       := CurrentPlayer.Score       + CurNotePoints;

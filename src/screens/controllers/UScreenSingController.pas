@@ -83,6 +83,17 @@ type
     procedure ClearLyricEngines();
     procedure CalculateStartTime;
     procedure SaveLocalScores;
+    // longq seek: jump within the song without counting jumped-over notes as misses
+    procedure SeekResetSkips();
+    procedure SeekMarkSkipped(FromBeat, ToBeat: integer);
+    procedure SeekTo(NewPosition: real);
+    procedure SkipIntro();
+  public
+    // longq seek: per track, note value / lines removed from the max score by seeking
+    SeekSkippedValue: array [0..1] of integer;
+    SeekSkippedLines: array [0..1] of integer;
+    SeekLineSkipped:  array [0..1] of array of boolean;
+    function SeekScoreValue(Track: integer): integer;
   public
     CheckPlayerConfigOnNextSong: boolean;
     eSongLoaded: THookableEvent; //< event is called after lyrics of a song are loaded on OnShow
@@ -269,6 +280,7 @@ begin
 
           LastSentencePerfect := false;
         end;
+        SeekResetSkips();
         AudioPlayback.SetPosition(fStartTime);
         if (fStartTime < CurrentSong.Start) then
           fCountIn := true;
@@ -415,14 +427,7 @@ begin
         end
         else
         begin
-          if (not CurrentSong.isDuet and (GetTimeFromBeat(Lyrics.GetUpperLine().StartNote) - AudioPlayback.Position > 6)) then
-          begin
-            AudioPlayback.SetPosition(GetTimeFromBeat(Lyrics.GetUpperLine().StartNote) - 5);
-          end
-          else if (CurrentSong.isDuet and (GetTimeFromBeat(min(LyricsDuetP1.GetUpperLine().StartNote, LyricsDuetP2.GetUpperLine().StartNote)) - AudioPlayback.Position > 6)) then
-          begin
-            AudioPlayback.SetPosition(GetTimeFromBeat(min(LyricsDuetP1.GetUpperLine().StartNote, LyricsDuetP2.GetUpperLine().StartNote)) - 5);
-          end;
+          SkipIntro();
           Exit;
         end;
       end;
@@ -558,50 +563,18 @@ begin
         AudioPlayback.ToggleKaraoke;
       end;
 
+      // longq seek: Right/Left (or Ctrl+Right/Left) = +/- 5 s.
+      // Plain arrows because macOS grabs Ctrl+arrows for Spaces.
       SDLK_RIGHT:
       begin
-        if ((SDL_ModState and KMOD_LCTRL) <> 0) then
-        begin
-          NewPosition := AudioPlayback.Position + 5.0;
-          AudioPlayback.SetPosition(NewPosition);
-          if (Assigned(fCurrentVideo)) then
-            fCurrentVideo.Position := CurrentSong.VideoGAP + NewPosition;
-        end;
+        if (SDL_ModState and not (KMOD_LCTRL + KMOD_RCTRL)) = 0 then
+          SeekTo(AudioPlayback.Position + 5.0);
       end;
 
       SDLK_LEFT:
       begin
-        if (SDL_ModState = KMOD_LCTRL) then // seek 5 seconds backward and reset scores to avoid cheating
-        begin
-          if (AudioPlayback.Position < 20.0) then
-          exit;
-        for i1 := 0 to High(Player) do
-        with Player[i1] do
-        begin
-          ResetScores;
-
-          ScoreLast      := 0;
-
-          LastSentencePerfect := false;
-        end;
-        Scores.KillAllPopUps;
-        // setup score manager
-        Scores.ClearPlayers; // clear old player values
-        // add new players
-        for i1 := 0 to PlayersPlay - 1 do
-        begin
-          Scores.AddPlayer(Tex_ScoreBG[i1], Color);
-        end;
-        Scores.Init;
-
-        NewPosition := AudioPlayback.Position - 5.0;
-        AudioPlayback.SetPosition(NewPosition);
-        LyricsState.SetCurrentTime(NewPosition);
-        ClearLyricEngines;
-        LyricsState.UpdateBeats();
-        if (Assigned(fCurrentVideo)) then
-          fCurrentVideo.Position := CurrentSong.VideoGAP + NewPosition;
-        end;
+        if (SDL_ModState and not (KMOD_LCTRL + KMOD_RCTRL)) = 0 then
+          SeekTo(AudioPlayback.Position - 5.0);
       end;
 
       SDLK_TAB:
@@ -1288,6 +1261,7 @@ begin
   // set number of empty sentences for line bonus
   NumEmptySentences[0] := 0;
   NumEmptySentences[1] := 0;
+  SeekResetSkips();
 
   if (CurrentSong.isDuet) and (PlayersPlay <> 1) then
   begin
@@ -1323,6 +1297,193 @@ begin
     CurrentSong.Tracks[i1].CurrentLine := 0;
     OnSentenceChange(i1, 0);
   end;
+end;
+
+{ ---------------------------------------------------------------------------
+  longq seek
+  Seeking forward removes the jumped-over note beats and touched lines from the
+  maximum score, and rescales points already earned, so a perfect singer still
+  ends at 10000 and skipped notes are not misses. Seeking backward resets the
+  scores (as upstream does, against re-singing for points) and then treats
+  everything before the new position as skipped.
+  --------------------------------------------------------------------------- }
+
+function TScreenSingController.SeekScoreValue(Track: integer): integer;
+begin
+  Result := CurrentSong.Tracks[Track].ScoreValue;
+  if (Track >= 0) and (Track <= 1) then
+    Result := Result - SeekSkippedValue[Track];
+  if Result < 1 then
+    Result := 1;
+end;
+
+procedure TScreenSingController.SeekResetSkips();
+var
+  T: integer;
+begin
+  for T := 0 to 1 do
+  begin
+    SeekSkippedValue[T] := 0;
+    SeekSkippedLines[T] := 0;
+    if (CurrentSong <> nil) and (T <= High(CurrentSong.Tracks)) then
+      SetLength(SeekLineSkipped[T], Length(CurrentSong.Tracks[T].Lines))
+    else
+      SetLength(SeekLineSkipped[T], 0);
+    if Length(SeekLineSkipped[T]) > 0 then
+      FillChar(SeekLineSkipped[T][0], Length(SeekLineSkipped[T]) * SizeOf(boolean), 0);
+  end;
+end;
+
+// beats in [FromBeat, ToBeat) are treated as never sung
+procedure TScreenSingController.SeekMarkSkipped(FromBeat, ToBeat: integer);
+var
+  T, MaxT, L, N, Overlap, LineValue, PlayerIndex: integer;
+  OldDen, NewDen, OldLines, NewLines: integer;
+  ScoreFactorNotes, ScoreFactorLines: real;
+  Frag: PLineFragment;
+begin
+  if ToBeat <= FromBeat then
+    Exit;
+
+  MaxT := 0;
+  if (CurrentSong.isDuet) and (PlayersPlay <> 1) then
+    MaxT := 1;
+
+  for T := 0 to MaxT do
+  begin
+    if T > High(CurrentSong.Tracks) then
+      Break;
+    if Length(SeekLineSkipped[T]) <> Length(CurrentSong.Tracks[T].Lines) then
+      SetLength(SeekLineSkipped[T], Length(CurrentSong.Tracks[T].Lines));
+
+    OldDen := SeekScoreValue(T);
+    OldLines := Max(1, Length(CurrentSong.Tracks[T].Lines) - NumEmptySentences[T] - SeekSkippedLines[T]);
+
+    for L := 0 to High(CurrentSong.Tracks[T].Lines) do
+    begin
+      LineValue := 0;
+      for N := 0 to High(CurrentSong.Tracks[T].Lines[L].Notes) do
+      begin
+        Frag := @CurrentSong.Tracks[T].Lines[L].Notes[N];
+        if (Frag.NoteType = ntFreestyle) or (Frag.Duration <= 0) then
+          Continue;
+        Overlap := Min(Frag.StartBeat + Frag.Duration, ToBeat) - Max(Frag.StartBeat, FromBeat);
+        if Overlap > 0 then
+          Inc(LineValue, Overlap * ScoreFactor[Frag.NoteType]);
+      end;
+      if LineValue > 0 then
+      begin
+        Inc(SeekSkippedValue[T], LineValue);
+        if (CurrentSong.Tracks[T].Lines[L].ScoreValue > 0) and not SeekLineSkipped[T][L] then
+        begin
+          SeekLineSkipped[T][L] := true;
+          Inc(SeekSkippedLines[T]);
+        end;
+      end;
+    end;
+
+    NewDen := SeekScoreValue(T);
+    NewLines := Max(1, Length(CurrentSong.Tracks[T].Lines) - NumEmptySentences[T] - SeekSkippedLines[T]);
+    ScoreFactorNotes := OldDen / NewDen;
+    ScoreFactorLines := OldLines / NewLines;
+
+    for PlayerIndex := 0 to PlayersPlay - 1 do
+    begin
+      if (not CurrentSong.isDuet) or (PlayerIndex mod 2 = T) or (PlayersPlay = 1) then
+      begin
+        Player[PlayerIndex].Score       := Player[PlayerIndex].Score * ScoreFactorNotes;
+        Player[PlayerIndex].ScoreGolden := Player[PlayerIndex].ScoreGolden * ScoreFactorNotes;
+        Player[PlayerIndex].ScoreLine   := Player[PlayerIndex].ScoreLine * ScoreFactorLines;
+        // the next line's perfection starts counting from here
+        Player[PlayerIndex].ScoreLast   := Player[PlayerIndex].Score + Player[PlayerIndex].ScoreGolden;
+      end;
+    end;
+  end;
+end;
+
+procedure TScreenSingController.SeekTo(NewPosition: real);
+var
+  OldBeatD, NewBeatD, T, MaxT, L, i1: integer;
+  Color: TRGB;
+  function BeatDAt(Time: real): integer;
+  begin
+    Result := Floor(-0.5 + GetMidBeat(Time - (LyricsState.StartTime + Ini.MicDelay) / 1000));
+  end;
+begin
+  if Paused or (CurrentSong = nil) then
+    Exit;
+  if (ScreenSong.Mode = smMedley) then
+    Exit;
+
+  if NewPosition < 0 then
+    NewPosition := 0;
+  if (AudioPlayback.Length > 1) and (NewPosition > AudioPlayback.Length - 1) then
+    NewPosition := AudioPlayback.Length - 1;
+
+  OldBeatD := LyricsState.CurrentBeatD;
+  NewBeatD := BeatDAt(NewPosition);
+
+  if NewPosition < AudioPlayback.Position then
+  begin
+    // backward: reset scores like upstream, then skip everything before here
+    for i1 := 0 to High(Player) do
+      with Player[i1] do
+      begin
+        ResetScores;
+        ScoreLast := 0;
+        LastSentencePerfect := false;
+      end;
+    Scores.KillAllPopUps;
+    Scores.ClearPlayers;
+    for i1 := 0 to PlayersPlay - 1 do
+    begin
+      if (CurrentSong.isDuet) and (PlayersPlay <> 1) then
+        Color := GetPlayerColor(Ini.PlayerColor[i1])
+      else
+        Color := GetPlayerColor(Ini.SingColor[i1]);
+      Scores.AddPlayer(Tex_ScoreBG[i1], Color);
+    end;
+    Scores.Init;
+    SeekResetSkips();
+    SeekMarkSkipped(Low(integer) div 2, NewBeatD);
+  end
+  else
+    SeekMarkSkipped(OldBeatD + 1, NewBeatD);
+
+  AudioPlayback.SetPosition(NewPosition);
+  LyricsState.SetCurrentTime(NewPosition);
+  LyricsState.UpdateBeats();
+  ClearLyricEngines;
+
+  // re-select the current line of each track and refill the lyric engines
+  MaxT := 0;
+  if (CurrentSong.isDuet) and (PlayersPlay <> 1) then
+    MaxT := 1;
+  for T := 0 to MaxT do
+  begin
+    CurrentSong.Tracks[T].CurrentLine := 0;
+    for L := 0 to CurrentSong.Tracks[T].High do
+      if LyricsState.CurrentBeat >= CurrentSong.Tracks[T].Lines[L].StartBeat then
+        CurrentSong.Tracks[T].CurrentLine := L;
+    NewSentence(T, Self);
+  end;
+
+  if (Assigned(fCurrentVideo)) then
+    fCurrentVideo.Position := CurrentSong.VideoGAP + NewPosition;
+end;
+
+// jump to ~2 s before the next sung line when that is more than 5 s away
+procedure TScreenSingController.SkipIntro();
+var
+  NextNote: real;
+begin
+  if not CurrentSong.isDuet then
+    NextNote := GetTimeFromBeat(Lyrics.GetUpperLine().StartNote)
+  else
+    NextNote := GetTimeFromBeat(Min(LyricsDuetP1.GetUpperLine().StartNote,
+                                    LyricsDuetP2.GetUpperLine().StartNote));
+  if NextNote - AudioPlayback.Position > 5 then
+    SeekTo(NextNote - 2);
 end;
 
 procedure TScreenSingController.ClearLyricEngines();
@@ -1746,11 +1907,16 @@ begin
   if Line.ScoreValue <= 0 then
     Exit;
 
+  // longq seek: lines jumped over (fully or partly) give no line bonus
+  if (Track <= 1) and (integer(SentenceIndex) < Length(SeekLineSkipped[Track])) and
+     SeekLineSkipped[Track][SentenceIndex] then
+    Exit;
+
   // set max song score
   MaxSongScore := MAX_SONG_SCORE - MAX_SONG_LINE_BONUS;
 
   // Note: ScoreValue is the sum of all note values of the song
-  MaxLineScore := MaxSongScore * (Line.ScoreValue / CurrentSong.Tracks[Track].ScoreValue);
+  MaxLineScore := MaxSongScore * (Line.ScoreValue / SeekScoreValue(Track));
 
   for PlayerIndex := 0 to High(Player) do
   begin
@@ -1780,8 +1946,8 @@ begin
         LinePerfection := 1;
 
       // line-bonus points (same for each line, no matter how long the line is)
-      LineBonus := MAX_SONG_LINE_BONUS / (Length(CurrentSong.Tracks[Track].Lines) -
-        NumEmptySentences[Track]);
+      LineBonus := MAX_SONG_LINE_BONUS / Max(1, Length(CurrentSong.Tracks[Track].Lines) -
+        NumEmptySentences[Track] - SeekSkippedLines[Track]);
       // apply line-bonus
       CurrentPlayer.ScoreLine :=
         CurrentPlayer.ScoreLine + LineBonus * LinePerfection;
