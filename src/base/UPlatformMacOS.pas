@@ -152,11 +152,37 @@ begin
   Result := Path(GetEnvironmentVariable('HOME'));
 end;
 
+{ longq: data dir name. Default "UltraStar Deluxe longq" (never touches a stock install). Overridden by
+  env USDX_DATA_NAME, else by the first line of Contents/MacOS/longq_datadir (the promoted install
+  points it at the stock app's dir so config, songs and highscores carry over). }
+function LongqDataName(ExecDir: IPath): string;
+var
+  F: TextFile;
+  Line: string;
+begin
+  Result := 'UltraStar Deluxe longq';
+  Line := Trim(GetEnvironmentVariable('USDX_DATA_NAME'));
+  if (Line = '') and FileExists(ExecDir.Append('longq_datadir').ToNative) then
+  begin
+    AssignFile(F, ExecDir.Append('longq_datadir').ToNative);
+    try
+      Reset(F);
+      if not Eof(F) then
+        ReadLn(F, Line);
+      CloseFile(F);
+    except
+      Line := '';
+    end;
+    Line := Trim(Line);
+  end;
+  if (Line <> '') and (Pos('/', Line) = 0) and (Pos('..', Line) = 0) then
+    Result := Line;
+end;
+
 function TPlatformMacOS.GetApplicationSupportPath: IPath;
 begin
-// append the version for conflict resolution
-  // longq: own data dir so this build never touches the stock app's config/scores
-  Result := GetHomeDir.Append('Library/Application Support/UltraStar Deluxe longq', pdAppend);
+  // longq: own data dir unless overridden (see LongqDataName)
+  Result := GetHomeDir.Append('Library/Application Support/' + LongqDataName(GetExecutionDir()), pdAppend);
 end;
 
 function TPlatformMacOS.GetLogPath: IPath;
@@ -164,7 +190,7 @@ begin
   if (IsLocal) then
     Result := Path(ExecutionDir.ToNative())
   else
-    Result := GetHomeDir.Append('Library/Logs/UltraStar Deluxe longq', pdAppend)
+    Result := GetHomeDir.Append('Library/Logs/' + LongqDataName(GetExecutionDir()), pdAppend)
 end;
 
 function TPlatformMacOS.GetMusicPath: IPath;

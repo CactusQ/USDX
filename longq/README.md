@@ -4,7 +4,7 @@ Branch `longq` = upstream + our commits (subject prefix `longq:`, one per featur
 
 | commit | what |
 |---|---|
-| separate macOS data/log dir | `~/Library/Application Support/UltraStar Deluxe longq`, `~/Library/Logs/UltraStar Deluxe longq`; stock app data untouched |
+| separate macOS data/log dir | `~/Library/Application Support/UltraStar Deluxe longq` by default; overridden by env `USDX_DATA_NAME` or `Contents/MacOS/longq_datadir` (the promoted install uses `UltraStarDeluxe2026.2.0`, the stock app's dir: same config, songs, highscores) |
 | seek | Right/Left (or Ctrl+Right/Left) = +/-5 s; S = jump to 5 s before the next note (any track) when it is >= 7 s away, count-in runs into that note; Shift+S still toggles scores; skipped notes are not misses |
 | build tooling | `kit.sh`, `env.sh`, `rebuild.sh`, `selftest.sh` |
 | reading line | optional `<chart>.reading` file: per-word annotation centred on its base (kana ruby over kanji, or romanization per syllable block), highlighted with the lyric. Options > Lyrics: Reading line Off / Above / Below, Kanji + furigana On/Off, Reading size 50-100% (default 80%). The lyric keeps its stock size; the bar grows and the 1-player note lanes move up |
@@ -55,3 +55,11 @@ Generator: `longq/reading_gen.py CHART.txt` or `--all SONGS_DIR [--force]`, dete
 via the chart pipeline's `romaji.py` (sha in the header). Japanese kanji ruby: inline `漢字(かな)` in the
 chart, else the pipeline's `lrclib_orig.json` aligned to the chart kana, else kanji typed in the chart read
 by the macOS tokenizer (`ja_tokens.py`, Apple `/usr/bin/python3` + pyobjc).
+
+## Promoted install (2026-11-09)
+
+`/Applications/UltraStarDeluxe.app` = this build, `longq_datadir` -> `UltraStarDeluxe2026.2.0`. The stock 2026.2.0
+app sits in `~/.local/state/ultrastar_backup/app_2026.2.0/`; pre-promotion copies of config.ini and the DBs in
+`~/.local/state/ultrastar_backup/promotion_20261109/`. Refresh after a rebuild: `PROMOTED=1 longq/rebuild.sh <ref>`.
+Rollback: `longq/rollback_promotion.sh`. Test the promoted app: `APP=/Applications/UltraStarDeluxe.app longq/selftest.sh <song dir>`
+(scratch config, copy of the score DB).

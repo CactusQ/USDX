@@ -47,6 +47,7 @@ uses
   Math,
   StrUtils,
   sdl2,
+  UDataBase,
   UDisplay,
   UGraphic,
   ULog,
@@ -107,7 +108,7 @@ end;
 
 procedure AutotestOnSongScreen;
 var
-  I: integer;
+  I, D, K: integer;
 begin
   if not AutotestActive or StartedSong then
     Exit;
@@ -119,6 +120,12 @@ begin
     begin
       StartedSong := true;
       AutotestLog(Format('starting song %d: %s - %s', [I, CatSongs.Song[I].Artist, CatSongs.Song[I].Title]));
+      // highscores from the score DB (proves the promoted build reads the existing Ultrastar.db)
+      DataBase.ReadScore(CatSongs.Song[I], 5);
+      for D := 0 to 2 do
+        for K := 0 to System.High(CatSongs.Song[I].Score[D]) do
+          AutotestLog(Format('highscore difficulty %d #%d: %s %d (%s)', [D, K + 1,
+            CatSongs.Song[I].Score[D][K].Name, CatSongs.Song[I].Score[D][K].Score, CatSongs.Song[I].Score[D][K].Date]));
       PlayersPlay := 1;
       // what the player-name screen normally does before singing
       LoadPlayersColors;
@@ -340,8 +347,8 @@ begin
          Tr := @CurrentSong.Tracks[0];
          for L := 0 to System.High(Tr.Lines) do
            for N := 0 to System.High(Tr.Lines[L].Notes) do
-             if (RubyAt < 0) and ((Pos('{', Tr.Lines[L].Notes[N].Surface) > 0) or
-                ((Trim(Tr.Lines[L].Notes[N].Reading) <> '') and
+             if (RubyAt < 0) and (((CurrentSong.HasFurigana) and (Pos('{', Tr.Lines[L].Notes[N].Surface) > 0)) or
+                ((not CurrentSong.HasFurigana) and (Trim(Tr.Lines[L].Notes[N].Reading) <> '') and
                  (Trim(Tr.Lines[L].Notes[N].Reading) <> Trim(Tr.Lines[L].Notes[N].Text)))) then
                RubyAt := GetTimeFromBeat(Tr.Lines[L].Notes[N].StartBeat);
          if RubyAt < 0 then

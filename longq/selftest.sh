@@ -7,9 +7,13 @@ set -uo pipefail
 APP="${APP:-/Applications/UltraStar Deluxe longq.app}"
 LIVE_SONGS="${LIVE_SONGS:-$HOME/Library/Application Support/UltraStarDeluxe2026.2.0/songs}"
 SONG_DIR="${1:-$LIVE_SONGS/_NEW_AI/f5ve - UFO (AI)}"
-DATA_DIR="$HOME/Library/Application Support/UltraStar Deluxe longq"
-LOG_DIR="$HOME/Library/Logs/UltraStar Deluxe longq"
+NAME="UltraStar Deluxe longq"   # data dir name: the promoted install reads it from longq_datadir
+[ -s "$APP/Contents/MacOS/longq_datadir" ] && NAME="$(head -1 "$APP/Contents/MacOS/longq_datadir")"
+DATA_DIR="$HOME/Library/Application Support/$NAME"
+LOG_DIR="$HOME/Library/Logs/$NAME"
 WORK="$(mktemp -d -t usdx-selftest)"
+# a COPY of the real score DB (highscores show, the real one is never written)
+[ -f "$DATA_DIR/Ultrastar.db" ] && cp -p "$DATA_DIR/Ultrastar.db" "$WORK/scores.db"
 
 osascript -e 'set volume output muted true' >/dev/null 2>&1 || true   # never unmuted here
 
@@ -42,6 +46,6 @@ for _ in $(seq 1 180); do kill -0 $PID 2>/dev/null || break; sleep 1; done
 if kill -0 $PID 2>/dev/null; then echo "selftest: TIMEOUT, killing"; kill $PID; RC=124; else wait $PID; RC=$?; fi
 
 echo "selftest: exit=$RC  work=$WORK"
-grep -h 'AUTOTEST\|reading' "$LOG_DIR/Error.log" "$WORK/stdout.log" 2>/dev/null | sed 's/^/  /'
+grep -h 'AUTOTEST\|reading\|Reading' "$LOG_DIR/Error.log" "$WORK/stdout.log" 2>/dev/null | sed 's/^/  /'
 echo "screenshots:"; find "$SHOTS" -newer "$WORK/stamp" -type f | sort | sed 's/^/  /'
 exit $RC

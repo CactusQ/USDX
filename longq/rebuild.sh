@@ -2,7 +2,8 @@
 # rebuild.sh <ref> : rebase our `longq` patches onto an upstream ref, build arm64, install
 #                    "/Applications/UltraStar Deluxe longq.app" (the stock app is never touched).
 #   ref = master | latest-release | <tag, e.g. v2026.11.0> | <any upstream sha>
-# Env: NO_INSTALL=1 (build only)  SKIP_REBASE=1 (build current checkout)  JOBS=N
+# Env: PROMOTED=1 (also refresh /Applications/UltraStarDeluxe.app, the promoted install, keeping its
+#      longq_datadir)  NO_INSTALL=1 (build only)  SKIP_REBASE=1 (build current checkout)  JOBS=N
 # Exit: 0 ok, 2 rebase conflict (rebase aborted, branch untouched), 1 other failure.
 # Long runs: python3 ~/scripts/detach_run.py --name usdx-build -- ~/src/USDX/longq/rebuild.sh latest-release
 set -uo pipefail
@@ -103,6 +104,14 @@ if [ -z "${NO_INSTALL:-}" ]; then
   pgrep -f "$APP_DST/Contents/MacOS/ultrastardx" >/dev/null && die "longq app is running; quit it first"
   case "$APP_DST" in *longq*.app) ;; *) die "refusing to install over $APP_DST" ;; esac
   rm -rf "$APP_DST.new" && cp -R "UltraStar Deluxe.app" "$APP_DST.new" && rm -rf "$APP_DST" && mv "$APP_DST.new" "$APP_DST" || die "install failed"
+  if [ "${PROMOTED:-0}" = 1 ]; then
+    P=/Applications/UltraStarDeluxe.app
+    [ -s "$P/Contents/MacOS/longq_datadir" ] || die "$P is not a promoted longq install"
+    pgrep -x ultrastardx >/dev/null && die "UltraStar is running; quit it first"
+    D="$(cat "$P/Contents/MacOS/longq_datadir")"
+    rm -rf "$P.new" && cp -R "UltraStar Deluxe.app" "$P.new" && printf '%s\n' "$D" > "$P.new/Contents/MacOS/longq_datadir" \
+      && codesign --force --deep --sign - "$P.new" >/dev/null 2>&1 && rm -rf "$P" && mv "$P.new" "$P" || die "promoted install failed"
+  fi
   # first run: seed our own config from a COPY of the stock config, songs read from the stock library
   if [ ! -f "$DATA_DIR/config.ini" ] && [ -f "$LIVE_DATA/config.ini" ]; then
     mkdir -p "$DATA_DIR"
