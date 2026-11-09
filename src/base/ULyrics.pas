@@ -40,6 +40,9 @@ uses
   UThemes,
   UMusic;
 
+const
+  RUBY_KANA_COMP = 1.1; // longq
+
 type
   TLyricsEffect = (lfxSimple, lfxZoom, lfxSlide, lfxBall, lfxShift);
   
@@ -544,6 +547,10 @@ begin
     // longq: per-word annotation (kana ruby over kanji, or romanization per syllable block),
     // centred over its base; words move apart where an annotation is wider than its base
     LyricLine.ReadingHeight := LyricLine.Height * ReadingScale;
+    // kana ruby: the font draws kana ~10% smaller than the kanji they sit on (measured 37-38 px vs 42 px
+    // at 1080p), so ruby gets +10% to read at ReadingSize of the kanji
+    if FuriganaMode then
+      LyricLine.ReadingHeight := LyricLine.ReadingHeight * RUBY_KANA_COMP;
     Shift := 0;
     for I := 0 to High(LyricLine.Words) do
     begin
@@ -669,7 +676,7 @@ begin
   if ReadingMode = 1 then
   begin
     ReadingY := Y + H * 0.01;
-    LyricY   := ReadingY + Line.Height * ReadingScale * 0.98;
+    LyricY   := ReadingY + Line.ReadingHeight * 0.98;
   end
   else if ReadingMode = 2 then
   begin

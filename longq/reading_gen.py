@@ -51,6 +51,77 @@ def hira(s):
     return "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in s)
 
 
+
+def _kakasi():
+    """pykakasi (dictionary readings, e.g. 雨上がり -> あめあがり), from the env or longq/.venv"""
+    try:
+        import pykakasi
+    except ImportError:
+        import glob
+        for sp in glob.glob(str(HERE / ".venv/lib/python3*/site-packages")):
+            sys.path.append(sp)
+        try:
+            import pykakasi
+        except ImportError:
+            return None
+    return pykakasi.kakasi()
+
+
+def _roles(pieces):
+    """per char: ("ruby", base, ruby) on the first char of a kanji run, ("skip",) on its other chars,
+    ("char", ch) otherwise"""
+    role = []
+    for surf, rd in pieces:
+        for text, ruby in (split_ruby(surf, rd) if KANJI.search(surf) else [(surf, None)]):
+            if ruby:
+                role.append(("ruby", text, ruby)); role += [("skip",)] * (len(text) - 1)
+            else:
+                role += [("char", c) for c in text]
+    return role
+
+
+def ja_pieces(lines):
+    """[[surface, hiragana reading], ...] per line. The macOS tokenizer (ja_tokens.py, Apple python + pyobjc)
+    reads single kanji in context well (愛してる -> あい); the pykakasi dictionary reads compounds well
+    (雨上がり -> あめあがり, where the tokenizer says う). Compounds of 2+ kanji take the dictionary reading."""
+    out = subprocess.run(["/usr/bin/python3", str(HERE / "ja_tokens.py")], input=json.dumps(lines),
+                         capture_output=True, text=True, check=True).stdout
+    tok = json.loads(out)
+    k = _kakasi()
+    if k is None:
+        return tok
+    res = []
+    for l, tp in zip(lines, tok):
+        rt = _roles(tp)
+        kp = [[x["orig"], hira(x["hira"])] for x in k.convert(l)]
+        rk = _roles(kp)
+        if len(rt) == len(rk) == len(l):
+            i = 0
+            while i < len(rk):
+                r = rk[i]
+                n = len(r[1]) if r[0] == "ruby" else 1
+                # only where the tokenizer's words line up with the compound (no word crossing its edges)
+                if (r[0] == "ruby" and n >= 2 and not KANJI.search(r[2]) and rt[i][0] != "skip"
+                        and (i + n >= len(rt) or rt[i + n][0] != "skip")):
+                    rt[i:i + n] = rk[i:i + n]
+                    i += n
+                elif (r[0] == "ruby" and n == 1 and rt[i][0] == "ruby" and len(rt[i][1]) == 1
+                      and len(rt[i][2]) == 1 and len(r[2]) > 1 and not KANJI.search(r[2])
+                      and (i + 1 >= len(rt) or rt[i + 1][0] == "char")):
+                    # lone kanji the tokenizer reads as one mora in a context it cannot parse (雨は -> う)
+                    rt[i] = r
+                    i += 1
+                else:
+                    i += 1
+        pcs = []
+        for i, r in enumerate(rt):
+            if r[0] == "ruby":
+                pcs.append([r[1], r[2]])
+            elif r[0] == "char":
+                pcs.append([r[1], r[1]])
+        res.append(pcs)
+    return res
+
 def find_kanji_source(lines):
     """lrclib_orig.json of the chart pipeline whose track/artist match the chart header, or None."""
     head = {l[1:].split(":", 1)[0].upper(): l.split(":", 1)[1].strip() for l in lines if l.startswith("#") and ":" in l}
@@ -85,8 +156,7 @@ def furigana(note_text_list, src_path):
     synced = json.loads(Path(src_path).read_text(encoding="utf-8"))["syncedLyrics"]
     olines = [re.sub(r"^\[[^\]]*\]", "", l) for l in synced.splitlines()]
     olines = [l for l in olines if JA.search(l)]
-    out = subprocess.run(["/usr/bin/python3", str(HERE / "ja_tokens.py")], input=json.dumps(olines),
-                         capture_output=True, text=True, check=True).stdout
+    out = json.dumps(ja_pieces(olines))
     # kana stream of the source: every reading char -> (chunk id, offset in chunk reading)
     chunks, kstream, kref = [], [], []
     for line in json.loads(out):
@@ -152,26 +222,19 @@ def chart_kanji(lines):
     if not groups:
         return {}
     # tokenize without whitespace: charts put a space after most notes, which would cut words apart
-    texts = ["".join(ch for _, t in g for ch in t if not ch.isspace()) for g in groups]
-    out = subprocess.run(["/usr/bin/python3", str(HERE / "ja_tokens.py")], input=json.dumps(texts),
-                         capture_output=True, text=True, check=True).stdout
+    texts = ["".join(ch for _, t in g for ch in t if not (ch.isspace() or ch == "~")) for g in groups]
+    out = json.dumps(ja_pieces(texts))
     res = {}
     for g, pieces in zip(groups, json.loads(out)):
         # per stripped char: ("ruby", base, ruby) on the first char of a kanji run, ("skip",) on its other
         # chars, ("char",) otherwise
-        role = []
-        for surf, rd in pieces:
-            for text, ruby in (split_ruby(surf, rd) if KANJI.search(surf) else [(surf, None)]):
-                if ruby:
-                    role.append(("ruby", text, ruby)); role += [("skip",)] * (len(text) - 1)
-                else:
-                    role += [("char",)] * len(text)
+        role = _roles(pieces)
         k = 0
         for i, t in g:
             parts, kana = [], ""
             for ch in t:
-                r = ("char",) if ch.isspace() else role[k]
-                if not ch.isspace():
+                r = ("char",) if (ch.isspace() or ch == "~") else role[k]
+                if not (ch.isspace() or ch == "~"):
                     k += 1
                 if r[0] == "ruby":
                     parts.append([r[1], r[2]]); kana += r[2]

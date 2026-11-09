@@ -1541,7 +1541,7 @@ begin
   // the theme leaves free above the bar (~32 units) only for what is left over
   Grow := (ReadingMode > 0) and not (CurrentSong.isDuet and (PlayersPlay <> 1));
   if Grow then
-    G := Round(Theme.LyricBar.UpperH * 0.9 * IReadingSizeVals[Ini.ReadingSize]) + 2
+    G := Round(Theme.LyricBar.UpperH * 0.9 * IReadingSizeVals[Ini.ReadingSize] * IfThen(Furigana, RUBY_KANA_COMP, 1)) + 2
   else
     G := 0;
   Lyrics.UpperLineH := Theme.LyricBar.UpperH + G;
