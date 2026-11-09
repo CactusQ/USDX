@@ -1113,16 +1113,12 @@ begin
 end;
 
 procedure TFFmpegDecodeStream.FlushSwrContext();
-var
-  I, NumSamples: integer;
-  Buffer: array[0..1023] of Byte;
-  BufferPtr: PByte;
 begin
-  BufferPtr := @Buffer[0];
-  NumSamples := SizeOf(Buffer) div fBytesPerSample;
-  repeat
-    I := swr_convert(fSwrContext, BufferPtr, NumSamples, nil, 0);
-  until I <= 0;
+  // longq: the drained samples were thrown away anyway; draining with a nil input crashed in
+  // libswresample on backward seeks (intermittent, parser thread). Re-initialising the context
+  // drops its buffered data the same way without the drain call.
+  if swr_init(fSwrContext) < 0 then
+    Log.LogError('swr_init failed on flush', 'TFFmpegDecodeStream.FlushSwrContext');
 end;
 
 function TFFmpegDecodeStream.DecodeFrame(): integer;

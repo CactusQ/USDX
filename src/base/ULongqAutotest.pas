@@ -50,6 +50,7 @@ uses
   UDataBase,
   UDisplay,
   UGraphic,
+  UIni,
   ULog,
   UMusic,
   UNote,
@@ -68,9 +69,54 @@ var
   RubyAt: real = -1;
   CountTarget: real = 0;
   Jumped: boolean = false;
+  Frames: cardinal = 0;
+  FrameT0: cardinal = 0;
+  FrameLast: cardinal = 0;
+  FrameWorst: cardinal = 0;
+
+{$IFDEF DARWIN}
+type
+  TDlInfo = record
+    dli_fname: PChar; dli_fbase: Pointer; dli_sname: PChar; dli_saddr: Pointer;
+  end;
+function dladdr(Addr: Pointer; var Info: TDlInfo): longint; cdecl; external 'c';
+function backtrace(Buf: PPointer; Size: longint): longint; cdecl; external 'c';
+procedure backtrace_symbols_fd(Buf: PPointer; Size: longint; Fd: longint); cdecl; external 'c';
+var
+  DumpedStack: boolean = false;
+
+{ longq: crash backtraces name the image + nearest symbol (lldb is not available here) }
+function DlBackTrace(Addr: CodePointer): ShortString;
+var
+  I: TDlInfo;
+  Frames: array[0..63] of Pointer;
+  N: longint;
+begin
+  if not DumpedStack then
+  begin
+    DumpedStack := true;
+    N := backtrace(@Frames[0], 64);
+    backtrace_symbols_fd(@Frames[0], N, 2);
+  end;
+  FillChar(I, SizeOf(I), 0);
+  if (dladdr(Addr, I) <> 0) and (I.dli_fname <> nil) then
+  begin
+    Result := ShortString(Format('  $%p %s +$%x', [Addr, ExtractFileName(string(I.dli_fname)),
+      PtrUInt(Addr) - PtrUInt(I.dli_fbase)]));
+    if I.dli_sname <> nil then
+      Result := Result + ShortString(Format(' %s+%d', [string(I.dli_sname), PtrUInt(Addr) - PtrUInt(I.dli_saddr)]));
+  end
+  else
+    Result := ShortString(Format('  $%p', [Addr]));
+end;
+{$ENDIF}
 
 procedure AutotestInit;
 begin
+  {$IFDEF DARWIN}
+  if GetEnvironmentVariable('LONGQ_AUTOTEST') <> '' then
+    BackTraceStrFunc := @DlBackTrace;
+  {$ENDIF}
   AutotestActive := GetEnvironmentVariable('LONGQ_AUTOTEST') <> '';
   AutotestSong := GetEnvironmentVariable('LONGQ_AUTOTEST_SONG');
   if AutotestActive then
@@ -257,6 +303,11 @@ begin
     Exit;
   AudioPlayback.SetVolume(0);
   Now := SDL_GetTicks;
+  // frame pacing over the whole run (seeks/screenshots included, so this is a floor)
+  if FrameT0 = 0 then FrameT0 := Now
+  else if Now - FrameLast > FrameWorst then FrameWorst := Now - FrameLast;
+  FrameLast := Now;
+  Inc(Frames);
   if (Step > 0) and (Now - StepTime < 1500) then
     Exit;
   case Step of
@@ -365,6 +416,10 @@ begin
     15: if RubyAt >= 0 then Shot('furigana_line');
     16: begin
          LogScore('done');
+         if Now > FrameT0 then
+           AutotestLog(Format('FPS avg %.1f over %.1f s (%d frames), worst frame %d ms, visualizer option=%s',
+             [Frames * 1000 / (Now - FrameT0), (Now - FrameT0) / 1000, Frames, FrameWorst,
+              IVisualizer[Ini.VisualizerOption]]));
          AutotestLog('finished, quitting');
          Halt(0);
        end;

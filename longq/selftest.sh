@@ -4,6 +4,8 @@
 #   scratch score DB, song library untouched. Prints the AUTOTEST log lines and screenshot paths.
 # default song: _NEW_AI/f5ve - UFO (AI) from the stock app's library
 set -uo pipefail
+# the live game shares the log dir and the GPU: never test while someone is singing
+if pgrep -x ultrastardx >/dev/null; then echo "selftest: UltraStar is running (live session), not starting"; exit 3; fi
 APP="${APP:-/Applications/UltraStar Deluxe longq.app}"
 LIVE_SONGS="${LIVE_SONGS:-$HOME/Library/Application Support/UltraStarDeluxe2026.2.0/songs}"
 SONG_DIR="${1:-$LIVE_SONGS/_NEW_AI/f5ve - UFO (AI)}"
@@ -32,6 +34,8 @@ for sec, k, v in [("Directories", "SongDir1", ""), ("Sound", "BackgroundMusic", 
                   ("Sound", "PreviewVolume", "0"), ("Lyrics", "ReadingLine", "Above"),
                   ("Graphics", "FullScreen", "Off"), ("Game", "Tabs", "Off")]:
     t = put(t, sec, k, v)
+import os
+if os.environ.get("VIS"): t = put(t, "Graphics", "Visualization", os.environ["VIS"])   # Off/WhenNoVideo/On
 open(dst, "w", encoding="utf-8").write(t)
 PY
 SHOTS="$DATA_DIR/screenshots"; mkdir -p "$SHOTS"; touch "$WORK/stamp"
