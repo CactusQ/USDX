@@ -34,7 +34,7 @@ SHOTS="$DATA_DIR/screenshots"; mkdir -p "$SHOTS"; touch "$WORK/stamp"
 [ -f "$LOG_DIR/Error.log" ] && mv "$LOG_DIR/Error.log" "$LOG_DIR/Error.prev.log"
 
 SDL_MAC_BACKGROUND_APP=1 LONGQ_AUTOTEST=1 LONGQ_AUTOTEST_SONG="${LONGQ_AUTOTEST_SONG:-}" \
-  "$APP/Contents/MacOS/ultrastardx" -window -resolution 1280x720 \
+  "$APP/Contents/MacOS/ultrastardx" -window -resolution "${RES:-1280x720}" \
   -songpath "$WORK/songs" -configfile "$WORK/config.ini" -scorefile "$WORK/scores.db" \
   > "$WORK/stdout.log" 2>&1 &
 PID=$!
