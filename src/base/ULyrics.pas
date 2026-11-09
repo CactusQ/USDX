@@ -40,6 +40,11 @@ uses
   UThemes,
   UMusic;
 
+const
+  // longq reading line: share of the lyric slot height
+  READING_MAIN_FRACTION = 0.62;
+  READING_FRACTION      = 0.36;
+
 type
   TLyricsEffect = (lfxSimple, lfxZoom, lfxSlide, lfxBall, lfxShift);
   
@@ -51,6 +56,9 @@ type
     Length:     Longint; // length of the word in quarters
     Text:       UTF8String; // text
     Freestyle:  boolean;  // is freestyle?
+    Reading:      UTF8String; // longq: reading token (romaji/kanji), may be empty
+    ReadingX:     real;
+    ReadingWidth: real;
   end;
   TLyricWordArray = array of TLyricWord;
 
@@ -66,6 +74,11 @@ type
       Length:         integer;      // length in quarters (from start of first to the end of the last note)
       Players:        byte;         // players that should sing that line (bitset, Player1: 1, Player2: 2, Player3: 4)
       LastLine:       boolean;      // is this the last line of the song?
+      // longq reading line
+      ReadingText:    UTF8String;
+      ReadingWidth:   real;
+      ReadingHeight:  real;
+      HasReading:     boolean;
 
       constructor Create();
       destructor Destroy(); override;
@@ -90,8 +103,13 @@ type
       procedure DrawLyricsWords(LyricLine: TLyricLine; X, Y: real; StartWord, EndWord: integer);
       procedure DrawLyricsLine(X, W, Y, H: real; Line: TLyricLine; Beat: real);
       procedure DrawBall(XBall, YBall, Alpha: real);
+      procedure DrawReadingWords(LyricLine: TLyricLine; X, Y: real; StartWord, EndWord: integer);
+      procedure DrawReadingLine(Line: TLyricLine; LyricX, ReadingY, Beat, Alpha: real; Active, IsUpper: boolean; LyricsEffect: TLyricsEffect);
 
     public
+      // longq: 0 = no reading line, 1 = reading above the lyric, 2 = below.
+      // Set per song (Ini.ReadingLine when the song has a reading file).
+      ReadingMode:    integer;
       // positions, line specific settings
       UpperLineX:     real;       // X start-pos of UpperLine
       UpperLineW:     real;       // Width of UpperLine with icon(s) and text
@@ -181,6 +199,11 @@ begin
   Text      := '';
   Width     := 0;
 
+  ReadingText   := '';
+  ReadingWidth  := 0;
+  ReadingHeight := 0;
+  HasReading    := false;
+
   // duet mode: players of that line (default: all)
   Players   := $FF;
 
@@ -201,6 +224,7 @@ begin
   BPM := 0;
   LCounter := 0;
   QueueFull := False;
+  ReadingMode := 0;
 
   UpperLine := TLyricLine.Create;
   LowerLine := TLyricLine.Create;
@@ -323,9 +347,14 @@ begin
       LyricLine.Words[NoteIndex].Length    := Line.Notes[NoteIndex].Duration;
       LyricLine.Words[NoteIndex].Text      := Line.Notes[NoteIndex].Text;
       LyricLine.Words[NoteIndex].Freestyle := Line.Notes[NoteIndex].NoteType = ntFreestyle;
+      LyricLine.Words[NoteIndex].Reading   := Line.Notes[NoteIndex].Reading;
 
       LyricLine.Text := LyricLine.Text + LyricLine.Words[NoteIndex].Text;
+      LyricLine.ReadingText := LyricLine.ReadingText + LyricLine.Words[NoteIndex].Reading;
     end;
+    // only show a reading when it adds something (lines in Latin script stay single)
+    LyricLine.HasReading := (ReadingMode > 0) and (Trim(LyricLine.ReadingText) <> '') and
+                            (LyricLine.ReadingText <> LyricLine.Text);
 
     UpdateLineMetrics(LyricLine);
   end;
@@ -418,6 +447,9 @@ begin
 
   // set font size to a reasonable value
   LyricLine.Height := RequestHeight * 0.9;
+  // longq: with a reading line the slot is shared: ~62% lyric, ~36% reading
+  if ReadingMode > 0 then
+    LyricLine.Height := RequestHeight * 0.9 * READING_MAIN_FRACTION;
   SetFontSize(LyricLine.Height);
   LyricLine.Width := TextWidth(LyricLine.Text);
 
@@ -455,6 +487,29 @@ begin
       TextSoFar := '';
     end;
   end;
+
+  // longq: reading line metrics (one continuous, centered text)
+  if LyricLine.HasReading then
+  begin
+    SetFontItalic(false);
+    LyricLine.ReadingHeight := RequestHeight * READING_FRACTION;
+    SetFontSize(LyricLine.ReadingHeight);
+    LyricLine.ReadingWidth := TextWidth(LyricLine.ReadingText);
+    if (LyricLine.ReadingWidth > RequestWidth) then
+    begin
+      LyricLine.ReadingHeight := Max(1, Trunc(LyricLine.ReadingHeight * (RequestWidth / LyricLine.ReadingWidth)));
+      SetFontSize(LyricLine.ReadingHeight);
+      LyricLine.ReadingWidth := TextWidth(LyricLine.ReadingText);
+    end;
+    TextSoFar := '';
+    for I := 0 to High(LyricLine.Words) do
+    begin
+      CurWord := @LyricLine.Words[I];
+      CurWord.ReadingWidth := TextWidth(CurWord.Reading);
+      TextSoFar := TextSoFar + CurWord.Reading;
+      CurWord.ReadingX := TextWidth(TextSoFar) - CurWord.ReadingWidth;
+    end;
+  end;
 end;
 
 procedure TLyricEngine.UpdateLineMetrics();
@@ -478,6 +533,7 @@ var
   LyricsEffect: TLyricsEffect;
   Alpha: real;    // alphalevel to fade out at end
   FontSize, FontScale: real;
+  ReadingY: real;
 
   OutlineColor_act: TRGB;                  // outline color actual line
   OutlineColor_dis: TRGB;                  // outline color next line
@@ -547,6 +603,18 @@ begin
   // center lyrics
   LyricX := X + (W - Line.Width) / 2;
   LyricY := Y + (H - Line.Height) / 2;
+  ReadingY := LyricY;
+  // longq: share the slot with the reading line
+  if ReadingMode = 1 then
+  begin
+    ReadingY := Y + H * 0.02;
+    LyricY   := Y + H * (0.02 + READING_FRACTION);
+  end
+  else if ReadingMode = 2 then
+  begin
+    LyricY   := Y + H * 0.02;
+    ReadingY := LyricY + Line.Height;
+  end;
   // get lyrics effect
 
   if (Display.CurrentScreen = @ScreenJukebox) or (Display.CurrentScreen = @ScreenOptionsJukebox) then
@@ -736,9 +804,69 @@ begin
 
   end;
 
+  // longq: reading line, highlighted in sync with the lyric
+  if Line.HasReading then
+  begin
+    SetOutlineColor(OutlineColor_en.R, OutlineColor_en.G, OutlineColor_en.B, Alpha);
+    DrawReadingLine(Line, X + (W - Line.ReadingWidth) / 2, ReadingY, Beat, Alpha,
+                    Beat >= Line.StartNote, Line = UpperLine, LyricsEffect);
+  end;
+
   // reset
   SetOutlineColor(0,0,0,-1);
 
+end;
+
+procedure TLyricEngine.DrawReadingWords(LyricLine: TLyricLine;
+    X, Y: real; StartWord, EndWord: integer);
+var
+  I: integer;
+begin
+  for I := StartWord to EndWord do
+    if LyricLine.Words[I].Reading <> '' then
+    begin
+      SetFontPos(X + LyricLine.Words[I].ReadingX, Y);
+      PrintText(LyricLine.Words[I].Reading);
+    end;
+end;
+
+{**
+ * longq: draws the reading line of Line. Sung tokens use the active colour for
+ * effects that keep sung words lit (zoom/slide), the current token is always
+ * active; a note without its own reading token keeps the previous token lit.
+ *}
+procedure TLyricEngine.DrawReadingLine(Line: TLyricLine; LyricX, ReadingY, Beat, Alpha: real;
+    Active, IsUpper: boolean; LyricsEffect: TLyricsEffect);
+var
+  Cur: integer;
+begin
+  SetFontItalic(false);
+  SetFontSize(Line.ReadingHeight);
+  if not Active then
+  begin
+    if IsUpper then
+      SetFontColor(LineColor_en.R, LineColor_en.G, LineColor_en.B, Alpha)
+    else
+      SetFontColor(LineColor_dis.R, LineColor_dis.G, LineColor_dis.B, Alpha);
+    DrawReadingWords(Line, LyricX, ReadingY, 0, High(Line.Words));
+    Exit;
+  end;
+
+  Cur := Max(0, Line.CurWord);
+  while (Cur > 0) and (Line.Words[Cur].Reading = '') do
+    Dec(Cur);
+
+  if LyricsEffect in [lfxZoom, lfxSlide] then
+    SetFontColor(LineColor_act.R, LineColor_act.G, LineColor_act.B, Alpha)
+  else
+    SetFontColor(LineColor_en.R, LineColor_en.G, LineColor_en.B, Alpha);
+  DrawReadingWords(Line, LyricX, ReadingY, 0, Cur - 1);
+
+  SetFontColor(LineColor_en.R, LineColor_en.G, LineColor_en.B, Alpha);
+  DrawReadingWords(Line, LyricX, ReadingY, Cur + 1, High(Line.Words));
+
+  SetFontColor(LineColor_act.R, LineColor_act.G, LineColor_act.B, Alpha);
+  DrawReadingWords(Line, LyricX, ReadingY, Cur, Cur);
 end;
 
 {**

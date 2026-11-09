@@ -94,6 +94,7 @@ type
     Duration:       integer;    // duration in beats
     Tone:           integer;    // full range tone
     Text:           UTF8String; // text assigned to this fragment (a syllable, word, etc.)
+    Reading:        UTF8String; // longq: optional reading (romaji/kanji) from <chart>.reading
     NoteType:       TNoteType;  // note-type: golden-note/freestyle etc.
 
     IsMedley:       boolean; // just for editor

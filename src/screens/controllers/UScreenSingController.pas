@@ -1487,10 +1487,20 @@ begin
 end;
 
 procedure TScreenSingController.ClearLyricEngines();
+var
+  ReadingMode: integer;
 begin
   Lyrics.Clear(CurrentSong.BPM);
   LyricsDuetP1.Clear(CurrentSong.BPM);
   LyricsDuetP2.Clear(CurrentSong.BPM);
+
+  // longq: reading line only for songs with a matching .reading
+  ReadingMode := 0;
+  if CurrentSong.HasReading then
+    ReadingMode := Ini.ReadingLine;
+  Lyrics.ReadingMode := ReadingMode;
+  LyricsDuetP1.ReadingMode := ReadingMode;
+  LyricsDuetP2.ReadingMode := ReadingMode;
 end;
 
 procedure TScreenSingController.CalculateStartTime;

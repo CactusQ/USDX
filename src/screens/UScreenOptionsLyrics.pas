@@ -339,6 +339,7 @@ begin
   AddSelectSlide('SING_OPTIONS_LYRICS_STYLE', Ini.LyricsStyle, ILyricsStyleTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_EFFECT', Ini.LyricsEffect, ILyricsEffectTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_NOTELINES', Ini.NoteLines, INoteLinesTranslated);
+  AddSelectSlide('SING_OPTIONS_LYRICS_READING', Ini.ReadingLine, IReadingLineTranslated);
 end;
 
 end.

@@ -133,8 +133,10 @@ type
     function LoadOpenedSong(SongFile: TTextFileStream; FileNamePath: IPath; DuetChange: boolean; RapToFreestyle: boolean; OutOfBoundsToFreestyle: boolean; AudioLength: real): boolean;
     function GetMD5: string;
     procedure SetMD5(const Value: string);
+    procedure LoadReading(const ChartPath: IPath);
   public
     Tracks: array of TLines; // Per-song track storage
+    HasReading: boolean; // longq: a matching <chart>.reading was loaded
   public
     Path:         IPath; // kust path component of file (only set if file was found)
     Folder:       UTF8String; // for sorting by folder (only set if file was found)
@@ -628,6 +630,89 @@ begin
   SongFile.Free;
 end;
 
+{**
+ * longq: optional reading line. "<chart>.reading" next to "<chart>.txt"
+ * (not *.txt, so song scanners never mistake it for a chart):
+ *   leading "#KEY:value" header lines (e.g. #NOTES:123 = expected note count),
+ *   then exactly one line per note, in chart order (track P1 notes, then P2).
+ *   The line text is the note's reading; an empty line = no reading for that
+ *   note. Leading spaces are kept (word breaks, like in the chart).
+ * Any count mismatch disables the reading for the song (logged), so a stale
+ * reading file can never be shown against the wrong notes.
+ *}
+procedure TSong.LoadReading(const ChartPath: IPath);
+var
+  ReadingPath: IPath;
+  F: TTextFileStream;
+  Line: UTF8String;
+  Tokens: array of UTF8String;
+  Count, Total, Expect, T, L, N, K: integer;
+  InHeader: boolean;
+begin
+  HasReading := false;
+  ReadingPath := ChartPath.SetExtension('.reading');
+  if not ReadingPath.IsFile then
+    Exit;
+
+  Total := 0;
+  for T := 0 to High(Tracks) do
+    for L := 0 to High(Tracks[T].Lines) do
+      Inc(Total, Length(Tracks[T].Lines[L].Notes));
+
+  try
+    F := TMemTextFileStream.Create(ReadingPath, fmOpenRead);
+  except
+    Exit;
+  end;
+  Count := 0;
+  Expect := -1;
+  InHeader := true;
+  SetLength(Tokens, 0);
+  try
+    while F.ReadLine(Line) do
+    begin
+      if (Count = 0) and InHeader and (Copy(Line, 1, 3) = #$EF#$BB#$BF) then
+        Delete(Line, 1, 3);
+      if (Length(Line) > 0) and (Line[Length(Line)] = #13) then
+        SetLength(Line, Length(Line) - 1);
+      if InHeader and (Length(Line) > 0) and (Line[1] = '#') then
+      begin
+        if Copy(Line, 1, 7) = '#NOTES:' then
+          Expect := StrToIntDef(Trim(Copy(Line, 8, MaxInt)), -1);
+        Continue;
+      end;
+      InHeader := false;
+      if Count >= Length(Tokens) then
+        SetLength(Tokens, Count * 2 + 64);
+      Tokens[Count] := Line;
+      Inc(Count);
+    end;
+  finally
+    F.Free;
+  end;
+  // tolerate one trailing empty line
+  if (Count = Total + 1) and (Tokens[Count - 1] = '') then
+    Dec(Count);
+
+  if (Count <> Total) or ((Expect >= 0) and (Expect <> Total)) then
+  begin
+    Log.LogWarn(Format('reading file ignored: %d tokens / #NOTES %d, chart has %d notes: %s',
+      [Count, Expect, Total, ReadingPath.ToNative]), 'TSong.LoadReading');
+    Exit;
+  end;
+
+  K := 0;
+  for T := 0 to High(Tracks) do
+    for L := 0 to High(Tracks[T].Lines) do
+      for N := 0 to High(Tracks[T].Lines[L].Notes) do
+      begin
+        Tracks[T].Lines[L].Notes[N].Reading := Tokens[K];
+        Inc(K);
+      end;
+  HasReading := true;
+  Log.LogStatus('reading line loaded: ' + ReadingPath.ToNative, 'TSong.LoadReading');
+end;
+
 function TSong.LoadOpenedSong(SongFile: TTextFileStream; FileNamePath: IPath; DuetChange: boolean; RapToFreestyle: boolean; OutOfBoundsToFreestyle: boolean; AudioLength: real): boolean;
 var
   CurLine:      RawByteString;
@@ -897,6 +982,9 @@ begin
         break;
     end;
   end;
+
+  // longq: optional <chart>.reading
+  LoadReading(FileNamePath);
 
   Result := true;
 end;
