@@ -76,11 +76,12 @@ KIT_TAG="$(git describe --tags --abbrev=0 --match 'v2*' "$UPSTREAM_SHA" 2>/dev/n
 export KIT_TAG
 # shellcheck disable=SC1091
 source "$REPO/longq/env.sh"
-echo "rebuild: kit=$KIT jobs=$JOBS"
+PM_FLAG=""; [ -f "$KIT/pkgconfig/projectM-4.pc" ] && PM_FLAG="--with-libprojectM"   # Feature D visualizer
+echo "rebuild: kit=$KIT jobs=$JOBS ${PM_FLAG}"
 
 # ---- 3. build ---------------------------------------------------------------
 {
-  nice -n 15 ./autogen.sh && nice -n 15 ./configure --without-opencv && nice -n 15 make clean && nice -n 15 make -j"$JOBS" "PPC=fpc -Paarch64"
+  nice -n 15 ./autogen.sh && nice -n 15 ./configure --without-opencv $PM_FLAG && nice -n 15 make clean && nice -n 15 make -j"$JOBS" "PPC=fpc -Paarch64"
 } > "$BUILD_OUT" 2>&1 || { grep -E 'Error|Fatal' "$BUILD_OUT" | head -5 >&2; die "build failed (see longq/.last-build.log)"; }
 file game/ultrastardx | grep -q arm64 || die "binary is not arm64"
 

@@ -1704,7 +1704,7 @@ begin
   //    TVisualizerOption(GetEnumValue(TypeInfo(TVisualizerOption),
   //            IniFile.ReadString('Graphics', 'Visualization', 'Off')));
   // || VisualizerOption := TVisualizerOption(GetArrayIndex(IVisualizer, IniFile.ReadString('Graphics', 'Visualization', 'Off')));
-  VisualizerOption := ReadArrayIndex(IVisualizer, IniFile, 'Graphics', 'Visualization', IGNORE_INDEX, 'Off');
+  VisualizerOption := ReadArrayIndex(IVisualizer, IniFile, 'Graphics', 'Visualization', IGNORE_INDEX, 'WhenNoVideo'); // longq default
 
 {**
  * Background music

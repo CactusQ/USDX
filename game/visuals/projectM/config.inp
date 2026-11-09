@@ -21,4 +21,5 @@ Hard Cut Sensitivity = 10
 ; Custom Shape Aspect Correction
 Aspect Correction = true
 
-Preset Path = presets
+; longq: curated bass-reactive, shader-free pack (40 presets); "presets" = upstream set
+Preset Path = longq

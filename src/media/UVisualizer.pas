@@ -59,6 +59,10 @@ uses
   UPlatform,
   URenderer,
   URenderer_OpenGL,
+  dglOpenGL,
+  UImage,
+  UNote,
+  USong,
   ULog;
 
 {$IF PROJECTM_VERSION >= 4002000}
@@ -104,6 +108,13 @@ type
       DstFormat: TAudioFormatInfo;
       Channels: projectm_channels;
       fRndPCMcount: integer;
+      // longq: cover blend + bass pulse
+      CoverTex: TTexture;
+      CoverTried: boolean;
+      Bass, BassPeak, BassLp: single;
+      procedure UpdateBass(const Data: TPCMData; nSamples: cardinal);
+      procedure LoadBlurredCover;
+      procedure DrawCoverBlend;
 
       function  GetRandomPCMData(var Data: TPCMData): Cardinal;
 
@@ -398,6 +409,11 @@ end;
 
 procedure TVideo_ProjectM.Close;
 begin
+  // longq: the blurred cover is per song
+  if CoverTex <> nil then
+    FreeAndNil(CoverTex);
+  CoverTried := false;
+  Bass := 0; BassPeak := 0; BassLp := 0;
   FreeAndNil(AudioConverter);
   FreeAndNil(DstFormat);
 end;
@@ -557,13 +573,164 @@ begin
     // send audio-data to projectM
     if (ConvertedBytes > 0) then
       ProjectM.AddAudioSamples(PSingle(fAudioData), ConvertedBytes div DstFormat.FrameSize, Channels);
+    UpdateBass(Data, nSamples);
   end;
 
   // let projectM render a frame
   ProjectM.RenderFrame();
 
   Renderer.ResetState;
+  // longq: blurred song cover added on top: result = cover + PM_MIX * projectM
+  DrawCoverBlend;
+  Renderer.ResetState;
   Renderer.ClearFrameBuffer(CLEAR_DEPTH);
+end;
+
+{ longq: bass level 0..1 (one-pole low-pass ~120 Hz, RMS, normalised by a slowly decaying peak) }
+procedure TVideo_ProjectM.UpdateBass(const Data: TPCMData; nSamples: cardinal);
+const
+  LP_A = 0.017;     // 2*pi*120/44100
+var
+  I: integer;
+  X, E, Rms, Level: single;
+begin
+  if nSamples = 0 then
+    Exit;
+  E := 0;
+  for I := 0 to Min(nSamples, Length(Data)) - 1 do
+  begin
+    X := (Data[I][0] + Data[I][1]) / 65536;
+    BassLp := BassLp + LP_A * (X - BassLp);
+    E := E + BassLp * BassLp;
+  end;
+  Rms := Sqrt(E / nSamples);
+  BassPeak := Max(Max(Rms, BassPeak * 0.997), 0.01);
+  Level := Min(1, Max(0, (Rms / BassPeak - 0.35) / 0.65));  // ignore the floor, keep the kicks
+  if Level > Bass then
+    Bass := Bass + 0.6 * (Level - Bass)
+  else
+    Bass := Bass * 0.88 + Level * 0.12;
+end;
+
+{ longq: the song cover, area-downscaled to 64x64 and box-blurred (3 passes), uploaded once }
+procedure TVideo_ProjectM.LoadBlurredCover;
+const
+  N = 64;
+  R = 3;
+var
+  Surf, Conv: PSDL_Surface;
+  Src: PByte;
+  Buf, Tmp: array of single;
+  Pix: array of byte;
+  X, Y, C, Pass, K, SX, SY, X0, X1, Y0, Y1, Cnt: integer;
+  Sum: single;
+  CoverPath: IPath;
+begin
+  CoverTried := true;
+  if (CurrentSong = nil) or (CurrentSong.Cover.IsUnset) then
+    Exit;
+  CoverPath := CurrentSong.Path.Append(CurrentSong.Cover);
+  Surf := LoadImage(CoverPath);
+  if Surf = nil then
+    Exit;
+  Conv := SDL_ConvertSurfaceFormat(Surf, SDL_PIXELFORMAT_ABGR8888, 0);
+  SDL_FreeSurface(Surf);
+  if Conv = nil then
+    Exit;
+  SetLength(Buf, N * N * 3);
+  SetLength(Tmp, N * N * 3);
+  SDL_LockSurface(Conv);
+  try
+    // area average into N x N
+    for Y := 0 to N - 1 do
+      for X := 0 to N - 1 do
+      begin
+        X0 := X * Conv.w div N; X1 := Max(X0 + 1, (X + 1) * Conv.w div N);
+        Y0 := Y * Conv.h div N; Y1 := Max(Y0 + 1, (Y + 1) * Conv.h div N);
+        for C := 0 to 2 do
+        begin
+          Sum := 0; Cnt := 0;
+          SY := Y0;
+          while SY < Y1 do
+          begin
+            SX := X0;
+            while SX < X1 do
+            begin
+              Src := PByte(Conv.pixels) + SY * Conv.pitch + SX * 4;
+              Sum := Sum + (Src + C)^;
+              Inc(Cnt);
+              Inc(SX, Max(1, (X1 - X0) div 8));
+            end;
+            Inc(SY, Max(1, (Y1 - Y0) div 8));
+          end;
+          Buf[(Y * N + X) * 3 + C] := Sum / Max(1, Cnt);
+        end;
+      end;
+  finally
+    SDL_UnlockSurface(Conv);
+    SDL_FreeSurface(Conv);
+  end;
+  // separable box blur, 3 passes ~ gaussian
+  for Pass := 1 to 3 do
+  begin
+    for Y := 0 to N - 1 do
+      for X := 0 to N - 1 do
+        for C := 0 to 2 do
+        begin
+          Sum := 0;
+          for K := -R to R do
+            Sum := Sum + Buf[(Y * N + EnsureRange(X + K, 0, N - 1)) * 3 + C];
+          Tmp[(Y * N + X) * 3 + C] := Sum / (2 * R + 1);
+        end;
+    for Y := 0 to N - 1 do
+      for X := 0 to N - 1 do
+        for C := 0 to 2 do
+        begin
+          Sum := 0;
+          for K := -R to R do
+            Sum := Sum + Tmp[(EnsureRange(Y + K, 0, N - 1) * N + X) * 3 + C];
+          Buf[(Y * N + X) * 3 + C] := Sum / (2 * R + 1);
+        end;
+  end;
+  SetLength(Pix, N * N * 4);
+  for K := 0 to N * N - 1 do
+  begin
+    for C := 0 to 2 do
+      Pix[K * 4 + C] := EnsureRange(Round(Buf[K * 3 + C]), 0, 255);
+    Pix[K * 4 + 3] := 255;
+  end;
+  CoverTex := Renderer.CreateTexture(PChar(@Pix[0]), UPath.Path('longq_blurred_cover'), N, N, TEXTURE_TYPE_PLAIN, false);
+end;
+
+{ longq: blurred cover, scaled to fill, pulsing with the bass; projectM stays at PM_MIX underneath }
+procedure TVideo_ProjectM.DrawCoverBlend;
+const
+  PM_MIX = 0.6;
+var
+  S, W, H, Int: single;
+begin
+  if not CoverTried then
+    LoadBlurredCover;
+  if CoverTex = nil then
+    Exit;
+  // fill the screen in pixels (render space is 800x600 stretched to the window)
+  S := Max(ScreenW, ScreenH) * (1.02 + 0.05 * Bass);
+  W := RenderW * S / ScreenW;
+  H := RenderH * S / ScreenH;
+  Int := 0.45 + 0.30 * Bass;
+  CoverTex.X := (RenderW - W) / 2;
+  CoverTex.Y := (RenderH - H) / 2;
+  CoverTex.Z := 0;
+  CoverTex.W := W;
+  CoverTex.H := H;
+  CoverTex.Int := 1;
+  CoverTex.ColR := Int; CoverTex.ColG := Int; CoverTex.ColB := Int;
+  CoverTex.Alpha := 1;
+  Renderer.SetBlend(true);
+  glBlendColor(0, 0, 0, PM_MIX);
+  glBlendFunc(GL_ONE, GL_CONSTANT_ALPHA);
+  Renderer.DrawTexture(CoverTex);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 end;
 
 {**

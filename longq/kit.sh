@@ -49,4 +49,24 @@ PC
 for h in lua.h luaconf.h lauxlib.h lualib.h; do
   gh api "repos/lua/lua/contents/$h?ref=v$LUAV" --jq .content | base64 -d > "$KIT/include/$h"
 done
+
+# longq Feature D: libprojectM 4 (arm64, built from source by usdx-toolchain/src/build_projectm.sh), optional
+PM="${USDX_TOOLCHAIN:-$HOME/src/usdx-toolchain}/projectm-arm64"
+if [ -f "$PM/lib/libprojectM-4.4.1.4.dylib" ]; then
+  cp -f "$PM/lib/libprojectM-4.4.1.4.dylib" "$KIT/lib/libprojectM-4.4.dylib"
+  install_name_tool -id @executable_path/libprojectM-4.4.dylib "$KIT/lib/libprojectM-4.4.dylib"
+  codesign --force --sign - "$KIT/lib/libprojectM-4.4.dylib"
+  ln -sf libprojectM-4.4.dylib "$KIT/lib/libprojectM-4.dylib"
+  mkdir -p "$KIT/include" && cp -R "$PM/include/projectM-4" "$KIT/include/"
+  cat > "$KIT/pkgconfig/projectM-4.pc" <<PC
+prefix=$KIT
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+Name: projectM-4
+Description: libprojectM 4.1.4 built from source (arm64)
+Version: 4.1.4
+Libs: -L\${libdir} -lprojectM-4
+Cflags: -I\${includedir}
+PC
+fi
 touch "$KIT/.done"; echo "$KIT"
