@@ -227,7 +227,8 @@ uses
   UWebcam,
   UWebSDK,
   Classes,
-  Math;
+  Math,
+  ULongqAutotest;
 
 const
   MAX_MESSAGE = 3;
@@ -1757,6 +1758,7 @@ begin
   Text[screenSingViewRef.TextP6DuetSixP].Visible   := V6DuetSixP and ScreenSing.Settings.AvatarsVisible;
 
   Result := screenSingViewRef.Draw();
+  AutotestOnSingFrame; // longq
 end;
 
 function TScreenSingController.FinishedMusic: boolean;

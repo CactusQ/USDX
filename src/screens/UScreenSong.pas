@@ -341,7 +341,8 @@ uses
   UScreenSongMenu,
   USkins,
   UUnicodeUtils,
-  Math;
+  Math,
+  ULongqAutotest;
 
 const
   MAX_TIME = 30;
@@ -3140,6 +3141,7 @@ var
   Position:   real;
   I, J:       integer;
 begin
+  AutotestOnSongScreen; // longq
 
   FadeMessage();
 

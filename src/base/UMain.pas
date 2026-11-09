@@ -101,7 +101,8 @@ uses
   ULuaParty,
   ULuaScreenSing,
   UTime,
-  UWebcam;
+  UWebcam,
+  ULongqAutotest;
   //UVideoAcinerella;
 
 procedure Main;
@@ -182,6 +183,7 @@ begin
     Log.LogStatus('Load Ini', 'Initialization');
     Ini := TIni.Create;
     Ini.Load;
+    AutotestInit; // longq: only active with LONGQ_AUTOTEST set
 
     // Help
     Log.LogStatus('Load Help', 'Initialization');

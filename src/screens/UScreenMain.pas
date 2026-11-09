@@ -81,7 +81,8 @@ uses
   URenderer,
   USkins,
   USongs,
-  UUnicodeUtils;
+  UUnicodeUtils,
+  ULongqAutotest;
 
 function TScreenMain.ParseInput(PressedKey: Cardinal; CharCode: UCS4Char;
   PressedDown: boolean): boolean;
@@ -322,6 +323,7 @@ end;
 function TScreenMain.Draw: boolean;
 begin
   Result := inherited Draw;
+  AutotestOnMainMenu; // longq
 
   if not ScreenPopupError.Visible then
   begin
