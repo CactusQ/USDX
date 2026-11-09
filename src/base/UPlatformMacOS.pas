@@ -155,7 +155,8 @@ end;
 function TPlatformMacOS.GetApplicationSupportPath: IPath;
 begin
 // append the version for conflict resolution
-  Result := GetHomeDir.Append('Library/Application Support/UltraStar Deluxe', pdAppend);
+  // longq: own data dir so this build never touches the stock app's config/scores
+  Result := GetHomeDir.Append('Library/Application Support/UltraStar Deluxe longq', pdAppend);
 end;
 
 function TPlatformMacOS.GetLogPath: IPath;
@@ -163,7 +164,7 @@ begin
   if (IsLocal) then
     Result := Path(ExecutionDir.ToNative())
   else
-    Result := GetHomeDir.Append('Library/Logs/UltraStar Deluxe', pdAppend)
+    Result := GetHomeDir.Append('Library/Logs/UltraStar Deluxe longq', pdAppend)
 end;
 
 function TPlatformMacOS.GetMusicPath: IPath;
