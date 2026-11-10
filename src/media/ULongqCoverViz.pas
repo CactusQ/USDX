@@ -205,6 +205,9 @@ const
     'float sdHeart(vec2 p){ p.x = abs(p.x); p.y += 0.6;'#10 +
     '  if (p.y + p.x > 1.0) return sqrt(dot(p - vec2(0.25, 0.75), p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;'#10 +
     '  return sqrt(min(dot(p - vec2(0.0, 1.0), p - vec2(0.0, 1.0)), dot(p - 0.5 * max(p.x + p.y, 0.0), p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y); }'#10 +
+    // cover hue at a set brightness (palette is sorted dark -> light), mild saturation lift
+    'vec3 vivid(vec3 c, float v){ float m = max(max(c.r, c.g), c.b); vec3 h = c / max(m, 0.02);'#10 +
+    '  float l = dot(h, vec3(0.333)); return clamp(l + (h - l) * 1.25, 0.0, 1.0) * v; }'#10 +
     'float star4(vec2 p, float s){ p = abs(p) / s; return max(0.0, 1.0 - (p.x * p.y * 40.0 + (p.x + p.y) * 0.9)); }'#10 +
     // rounded cover card with drop shadow, returns rgb + coverage in .a
     'vec4 coverCard(vec2 p, float s, float r){ vec2 c = p / s; float d = sdBox(c, vec2(0.5), r);'#10 +
@@ -248,8 +251,10 @@ const
   { 1: Y2K gyaru: pink/cyan gradient, chrome stripes, rising hearts, glitter on the highs }
   FS_Y2K =
     'vec3 scene(vec2 uv, vec2 p){'#10 +
-    '  vec3 pink = vec3(1.0, 0.36, 0.78), cyan = vec3(0.35, 0.95, 1.0), lil = vec3(0.75, 0.6, 1.0);'#10 +
-    '  pink = mix(pink, uPal[3], 0.25); cyan = mix(cyan, uPal[4], 0.2);'#10 +
+    // colours come from the cover; a 15 % Y2K tint keeps the style
+    '  vec3 pink = mix(vivid(uPal[3], 0.95), vec3(1.0, 0.36, 0.78), 0.15);'#10 +
+    '  vec3 cyan = mix(vivid(uPal[4], 1.0), vec3(0.35, 0.95, 1.0), 0.15);'#10 +
+    '  vec3 lil = vivid(mix(uPal[2], uPal[4], 0.5), 0.85);'#10 +
     '  float g = uv.x * 0.7 + uv.y * 0.5 + 0.08 * sin(uTime * 0.5 + p.y * 3.0);'#10 +
     '  vec3 col = mix(pink, cyan, smoothstep(0.1, 1.1, g)); col = mix(col, lil, 0.25 * sin(uTime * 0.3 + p.x * 2.0) + 0.1);'#10 +
     '  float st = sin((p.y + uTime * 0.08) * 26.0 + fbm(p * 3.0) * 4.0);'#10 +
@@ -260,7 +265,7 @@ const
     '    float sz = 0.035 + 0.04 * hash(vec2(fi, 3.0)) + 0.02 * band(h);'#10 +
     '    vec2 q = (p - c) / sz; q = mat2(cos(h * 6.0), -sin(h * 6.0), sin(h * 6.0), cos(h * 6.0)) * q * 0.9;'#10 +
     '    float d = sdHeart(q * vec2(1.0, -1.0) + vec2(0.0, 0.5));'#10 +
-    '    vec3 hc = mod(fi, 2.0) < 1.0 ? vec3(1.0, 0.2, 0.6) : vec3(1.0, 1.0, 1.0);'#10 +
+    '    vec3 hc = mod(fi, 2.0) < 1.0 ? vivid(uPal[2], 1.0) : vec3(1.0, 1.0, 1.0);'#10 +
     '    col = mix(col, hc, smoothstep(0.06, -0.02, d) * 0.85);'#10 +
     '    col += vec3(1.0) * smoothstep(0.05, 0.0, abs(d)) * 0.4;'#10 +
     '  }'#10 +
@@ -272,7 +277,8 @@ const
     '  col = mix(col, vec3(1.0), smoothstep(0.06, 0.0, abs(d - 0.03)) * (0.7 + 0.3 * sin(uTime * 4.0 + atan(cp.y, cp.x) * 3.0)));'#10 +
     '  vec4 c = coverCard(cp, s, 0.12);'#10 +
     '  col = mix(col, c.rgb, c.a);'#10 +
-    '  col += vec3(1.0, 0.8, 0.95) * uKick * 0.12;'#10 +
+    '  col += vivid(uPal[4], 1.0) * uKick * 0.12;'#10 +
+    '  col *= mix(0.6, 1.0, smoothstep(0.05, 0.38, uv.y));'#10 +
     '  return col;'#10 +
     '}'#10;
 
@@ -391,12 +397,12 @@ const
   { 7: Frutiger Aero: glossy sky, clouds, rising bubbles, glossy cover window }
   FS_AERO =
     'vec3 scene(vec2 uv, vec2 p){'#10 +
-    '  vec3 sky = mix(vec3(0.05, 0.45, 0.85), vec3(0.55, 0.92, 1.0), uv.y);'#10 +
-    '  sky = mix(sky, uPal[4], 0.15);'#10 +
+    // sky + hill from the cover palette (was fixed blue/green)
+    '  vec3 sky = mix(vivid(uPal[2], 0.6), vivid(uPal[4], 1.0), uv.y);'#10 +
     '  float cl = fbm(p * 2.5 + vec2(uTime * 0.03, 0.0));'#10 +
     '  vec3 col = mix(sky, vec3(1.0), smoothstep(0.55, 0.85, cl) * 0.7);'#10 +
     '  float hill = 0.25 * sin(p.x * 2.0 + 1.0) - 0.32 + 0.04 * sin(p.x * 7.0 + uTime * 0.4);'#10 +
-    '  col = mix(col, mix(vec3(0.2, 0.75, 0.25), vec3(0.6, 0.95, 0.4), smoothstep(hill - 0.2, hill, p.y)), smoothstep(0.003, -0.003, p.y - hill));'#10 +
+    '  col = mix(col, mix(vivid(uPal[1], 0.3), vivid(uPal[3], 0.65), smoothstep(hill - 0.2, hill, p.y)), smoothstep(0.003, -0.003, p.y - hill));'#10 +
     '  for (int i = 0; i < 18; i++) {'#10 +
     '    float fi = float(i); float h = hash(vec2(fi, uSeed + 2.0));'#10 +
     '    vec2 c = vec2((h - 0.5) * uRes.x / uRes.y, fract(h * 3.7 + uTime * (0.03 + 0.04 * h)) * 1.5 - 0.75);'#10 +
@@ -414,6 +420,7 @@ const
     '  col += vec3(1.0) * smoothstep(0.05, 0.0, abs(sdBox(cp / s, vec2(0.5), 0.08))) * 0.35;'#10 +
     '  col += vec3(1.0, 1.0, 0.9) * uHigh * 0.4 * exp(-length(p - vec2(0.55, 0.38)) * 6.0);'#10 +
     '  col *= 0.9 + 0.15 * uKick;'#10 +
+    '  col *= mix(0.6, 1.0, smoothstep(0.05, 0.38, uv.y));'#10 +
     '  return col;'#10 +
     '}'#10;
 
