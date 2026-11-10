@@ -199,6 +199,8 @@ uses
   UImage            in 'base\UImage.pas',
   ULyrics           in 'base\ULyrics.pas',
   ULongqAutotest    in 'base\ULongqAutotest.pas',
+  ULongqVersionKey  in 'base\ULongqVersionKey.pas',
+  ULongqVersions    in 'base\ULongqVersions.pas',
   UEditorLyrics     in 'base\UEditorLyrics.pas',
   USkins            in 'base\USkins.pas',
   UThemes           in 'base\UThemes.pas',

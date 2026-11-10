@@ -9,6 +9,7 @@ Branch `longq` = upstream + our commits (subject prefix `longq:`, one per featur
 | build tooling | `kit.sh`, `env.sh`, `rebuild.sh`, `selftest.sh` |
 | reading line | optional `<chart>.reading` file: per-word annotation centred on its base (kana ruby over kanji, or romanization per syllable block), highlighted with the lyric. Options > Lyrics: Reading line Off / Above / Below, Kanji + furigana On/Off, Reading size 50-100% (default 80%). The lyric keeps its stock size; the bar grows and the 1-player note lanes move up |
 | self-test | `LONGQ_AUTOTEST=1` scripted run (off by default) |
+| lyric versions | sibling charts of one song (original / AI / romaji / kanji+furigana / duet [MULTI] / fixed) show as ONE song-list entry titled `<title>  < <version> >`; L / Shift+L (and Space on a non-duet chart) swap the entry to the next / previous chart in place, so singing, scores and editor use that chart. Grouping: same folder + same audio, or same #ARTIST + #TITLE minus a version suffix. `[Lyrics] LyricVersions=Off` in config.ini restores one entry per chart. Check: `longq/versions_check.sh` (headless) |
 
 ## Rebuild
 

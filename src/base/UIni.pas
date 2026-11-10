@@ -206,6 +206,7 @@ type
       ReadingLine:    integer; // longq: 0 off, 1 above, 2 below
       Furigana:       integer; // longq: 0 kana only, 1 kanji with kana ruby (when the reading file has it)
       ReadingSize:    integer; // longq: index into IReadingSize (annotation size vs lyric)
+      LyricVersions:  integer; // longq: 1 = sibling charts (romaji/kanji/duet/fixed) share one song-list entry
 
       // Themes
       Theme:          integer;
@@ -429,6 +430,7 @@ const
   INoteLines:     array[0..1] of UTF8String = ('Off', 'On');
   IReadingLine:   array[0..2] of UTF8String = ('Off', 'Above', 'Below');
   IFurigana:      array[0..1] of UTF8String = ('Off', 'On');
+  ILyricVersions: array[0..1] of UTF8String = ('Off', 'On');
   IReadingSize:   array[0..5] of UTF8String = ('50%', '60%', '70%', '80%', '90%', '100%');
   IReadingSizeVals: array[0..5] of real = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0);
 
@@ -1684,6 +1686,7 @@ begin
   ReadingLine := ReadArrayIndex(IReadingLine, IniFile, 'Lyrics', 'ReadingLine', 1);
   Furigana := ReadArrayIndex(IFurigana, IniFile, 'Lyrics', 'Furigana', 1);
   ReadingSize := ReadArrayIndex(IReadingSize, IniFile, 'Lyrics', 'ReadingSize', 3);
+  LyricVersions := ReadArrayIndex(ILyricVersions, IniFile, 'Lyrics', 'LyricVersions', 1);
 
   // DefaultEncoding
   DefaultEncoding := ParseEncoding(IniFile.ReadString('Lyrics', 'Encoding', ''), encAuto);
@@ -2018,6 +2021,7 @@ begin
     IniFile.WriteString('Lyrics', 'ReadingLine', IReadingLine[ReadingLine]);
     IniFile.WriteString('Lyrics', 'Furigana', IFurigana[Furigana]);
     IniFile.WriteString('Lyrics', 'ReadingSize', IReadingSize[ReadingSize]);
+    IniFile.WriteString('Lyrics', 'LyricVersions', ILyricVersions[LyricVersions]);
 
     //Encoding default
     IniFile.WriteString('Lyrics', 'Encoding', EncodingName(DefaultEncoding));

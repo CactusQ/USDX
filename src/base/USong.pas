@@ -138,6 +138,14 @@ type
     Tracks: array of TLines; // Per-song track storage
     HasReading: boolean; // longq: a matching <chart>.reading was loaded
     HasFurigana: boolean; // longq: the reading file carries kanji display text with ruby (v2)
+    // longq: lyric versions. Charts of one song (original / romaji / kanji / duet / fixed ...)
+    // share one song-list entry; ULongqVersions fills these on every TCatSongs.Refresh.
+    VersionGroup: array of TSong;    // all charts of this song in display order; empty = no siblings
+    VersionLabel: UTF8String;        // "Original", "AI Romaji", "AI Kanji + furigana", "Duet", ...
+    VersionBaseTitle: UTF8String;    // title without the version suffix, shown on the song screen
+    VersionHidden: boolean;          // a sibling is the group's current entry; not in CatSongs.Song
+    VersionChosen: boolean;          // last version picked by the player (kept across refreshes)
+    VersionReadingKind: integer;     // cache of the .reading kind + 1; 0 = not read yet
   public
     Path:         IPath; // kust path component of file (only set if file was found)
     Folder:       UTF8String; // for sorting by folder (only set if file was found)

@@ -311,6 +311,7 @@ type
       function  getVisibleMedleyArr(MinSource: TMedleySource): TVisArr;
 
       procedure ColorDuetNameSingers;
+      procedure CycleLyricVersion(Dir: integer); // longq
 
       procedure StopMusicPreview();
       procedure StopVideoPreview();
@@ -342,7 +343,8 @@ uses
   USkins,
   UUnicodeUtils,
   Math,
-  ULongqAutotest;
+  ULongqAutotest,
+  ULongqVersions;
 
 const
   MAX_TIME = 30;
@@ -1394,7 +1396,19 @@ begin
             ScreenJukebox.AddSongToJukeboxList(Interaction);
 
           if (Mode = smNormal) and (CatSongs.Song[Interaction].isDuet) then
-            DuetChange := not DuetChange;
+            DuetChange := not DuetChange
+          else if (Mode = smNormal) then
+            CycleLyricVersion(1); // longq: like the duet swap, Space picks the lyric version
+        end;
+      SDLK_L: // longq: lyric version (Original / Romaji / Kanji + furigana / Duet ...), Shift = back
+        begin
+          if (Mode = smNormal) then
+          begin
+            if (SDL_ModState and (KMOD_LSHIFT or KMOD_RSHIFT)) <> 0 then
+              CycleLyricVersion(-1)
+            else
+              CycleLyricVersion(1);
+          end;
         end;
       SDLK_1:
         begin //Joker
@@ -1985,6 +1999,27 @@ begin
 
 end;
 
+{ longq: swap the selected entry for the next/previous chart of the same song, in place.
+  Everything downstream (sing, scores, editor, medley) reads CatSongs.Song[Interaction]. }
+procedure TScreenSong.CycleLyricVersion(Dir: integer);
+var
+  Cur, Next: TSong;
+begin
+  if (CatSongs.VisibleSongs = 0) or (Interaction < 0) or (Interaction > High(CatSongs.Song)) then
+    Exit;
+  Cur := CatSongs.Song[Interaction];
+  if not LongqHasVersions(Cur) then
+    Exit;
+  Next := LongqCycleVersion(Cur, Dir);
+  if Next = Cur then
+    Exit;
+  CatSongs.Song[Interaction] := Next;
+  DuetChange := false;
+  RapToFreestyle := false;
+  AudioPlayback.PlaySound(SoundLib.Change);
+  SetScroll;
+end;
+
 procedure TScreenSong.ColorDuetNameSingers();
   procedure setColor(static: integer; color: TRGB);
   begin
@@ -2251,7 +2286,7 @@ begin
       Text[TextArtist].Size := Theme.Song.TextArtist.Size; // reset in case it was previously decreased by a too long artist
       Text[TextArtist].Text := CatSongs.Song[Interaction].Artist;
       Text[TextTitle].Size := Theme.Song.TextTitle.Size; // reset in case it was previously decreased by a too long title
-      Text[TextTitle].Text  :=  CatSongs.Song[Interaction].Title;
+      Text[TextTitle].Text  :=  LongqVersionTitle(CatSongs.Song[Interaction]);
       if ((Ini.Tabs = 0) or (TSortingType(Ini.Sorting) <> sYear))
         and (CatSongs.Song[Interaction].Year <> 0) then
           Text[TextYear].Text  :=  InttoStr(CatSongs.Song[Interaction].Year)
@@ -2869,7 +2904,7 @@ begin
     Text[ListTextArtist[I]].Text := CatSongs.Song[SongID[I]].Artist;
 
     Text[ListTextTitle[I]].Alpha := Alpha;
-    Text[ListTextTitle[I]].Text  :=  CatSongs.Song[SongID[I]].Title;
+    Text[ListTextTitle[I]].Text  :=  LongqVersionTitle(CatSongs.Song[SongID[I]]);
 
     Text[ListTextYear[I]].Alpha := Alpha;
 

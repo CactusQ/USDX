@@ -172,7 +172,7 @@ end;
 function TPlayListManager.LoadPlayList(Index: Cardinal; const Filename: IPath): Boolean;
 
   function FindSong(Artist, Title: UTF8String): Integer;
-  var I: Integer;
+  var I, V: Integer;
   begin
     Result := -1;
 
@@ -183,6 +183,12 @@ function TPlayListManager.LoadPlayList(Index: Cardinal; const Filename: IPath): 
         Result := I;
         Break;
       end;
+      // longq: a chart hidden behind its song's entry (lyric versions) resolves to that entry
+      for V := 0 to High(CatSongs.Song[I].VersionGroup) do
+        if (CatSongs.Song[I].VersionGroup[V].Title = Title) and (CatSongs.Song[I].VersionGroup[V].Artist = Artist) then
+          Result := I;
+      if Result >= 0 then
+        Break;
     end;
   end;
 
