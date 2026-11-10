@@ -1539,7 +1539,9 @@ begin
   // longq: the annotation band needs room: each single-player slot grows by the annotation
   // size, upwards (bar bottom stays put); the one-player note lanes move up into the space
   // the theme leaves free above the bar (~32 units) only for what is left over
-  Grow := (ReadingMode > 0) and not (CurrentSong.isDuet and (PlayersPlay <> 1));
+  // operator 2026-11-09: lyric bar and note lanes stay at the stock geometry; annotations use
+  // the free space above the current line instead of growing the bar
+  Grow := false;
   if Grow then
     G := Round(Theme.LyricBar.UpperH * 0.9 * IReadingSizeVals[Ini.ReadingSize] * IfThen(Furigana, RUBY_KANA_COMP, 1)) + 2
   else

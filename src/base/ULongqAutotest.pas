@@ -70,6 +70,8 @@ var
   CountTarget: real = 0;
   Jumped: boolean = false;
   Frames: cardinal = 0;
+  SeekLoopN: integer = 0;
+  SeekLoopDone: integer = 0;
   FrameT0: cardinal = 0;
   FrameLast: cardinal = 0;
   FrameWorst: cardinal = 0;
@@ -119,6 +121,7 @@ begin
   {$ENDIF}
   AutotestActive := GetEnvironmentVariable('LONGQ_AUTOTEST') <> '';
   AutotestSong := GetEnvironmentVariable('LONGQ_AUTOTEST_SONG');
+  SeekLoopN := StrToIntDef(GetEnvironmentVariable('LONGQ_AUTOTEST_SEEKLOOP'), 0);
   if AutotestActive then
     AutotestLog('active, song filter "' + AutotestSong + '"');
 end;
@@ -414,7 +417,23 @@ begin
          end;
        end;
     15: if RubyAt >= 0 then Shot('furigana_line');
-    16: begin
+    16: if SeekLoopDone < SeekLoopN * 3 then
+       begin
+         // crash soak: Left / Right / S, SeekLoopN times each (LONGQ_AUTOTEST_SEEKLOOP)
+         if AudioPlayback.Position > AudioPlayback.Length - 25 then
+           ScreenSing.SeekTo(20);
+         case SeekLoopDone mod 3 of
+           0: Key(SDLK_LEFT, Format('soak %d/%d Left', [SeekLoopDone div 3 + 1, SeekLoopN]));
+           1: Key(SDLK_RIGHT, Format('soak %d/%d Right', [SeekLoopDone div 3 + 1, SeekLoopN]));
+           2: Key(SDLK_S, Format('soak %d/%d S', [SeekLoopDone div 3 + 1, SeekLoopN]));
+         end;
+         Inc(SeekLoopDone);
+         if SeekLoopDone = SeekLoopN * 3 then
+           AutotestLog(Format('CHECK soak: %d x Left/Right/S without a crash -> PASS', [SeekLoopN]));
+         Dec(Step);
+       end
+       else
+       begin
          LogScore('done');
          if Now > FrameT0 then
            AutotestLog(Format('FPS avg %.1f over %.1f s (%d frames), worst frame %d ms, visualizer option=%s',

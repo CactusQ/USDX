@@ -20,7 +20,7 @@ WORK="$(mktemp -d -t usdx-selftest)"
 osascript -e 'set volume output muted true' >/dev/null 2>&1 || true   # never unmuted here
 
 mkdir -p "$WORK/songs" && ln -s "$SONG_DIR" "$WORK/songs/$(basename "$SONG_DIR")"
-python3 - "$DATA_DIR/config.ini" "$WORK/config.ini" <<'PY'
+python3 - "${CONFIG_SRC:-$DATA_DIR/config.ini}" "$WORK/config.ini" <<'PY'
 import sys, re
 src, dst = sys.argv[1:]
 try: t = open(src, encoding="utf-8", errors="replace").read()
@@ -32,17 +32,20 @@ def put(t, sec, key, val):
 t = re.sub(r"(?ms)^\[Record\].*?(?=^\[|\Z)", "", t)          # no mic channels assigned
 for sec, k, v in [("Directories", "SongDir1", ""), ("Sound", "BackgroundMusic", "Off"),
                   ("Sound", "PreviewVolume", "0"), ("Lyrics", "ReadingLine", "Above"),
-                  ("Graphics", "FullScreen", "Off"), ("Game", "Tabs", "Off")]:
+                  ("Game", "Tabs", "Off")]:
     t = put(t, sec, k, v)
 import os
+# MODE=borderless reproduces the operator's live setup (Borderless at the desktop size)
+t = put(t, "Graphics", "FullScreen", "Borderless" if os.environ.get("MODE") == "borderless" else "Off")
 if os.environ.get("VIS"): t = put(t, "Graphics", "Visualization", os.environ["VIS"])   # Off/WhenNoVideo/On
 open(dst, "w", encoding="utf-8").write(t)
 PY
 SHOTS="$DATA_DIR/screenshots"; mkdir -p "$SHOTS"; touch "$WORK/stamp"
 [ -f "$LOG_DIR/Error.log" ] && mv "$LOG_DIR/Error.log" "$LOG_DIR/Error.prev.log"
 
+WINARGS="-window -resolution ${RES:-1280x720}"; [ "${MODE:-}" = borderless ] && WINARGS=""
 SDL_MAC_BACKGROUND_APP=1 LONGQ_AUTOTEST=1 LONGQ_AUTOTEST_SONG="${LONGQ_AUTOTEST_SONG:-}" \
-  "$APP/Contents/MacOS/ultrastardx" -window -resolution "${RES:-1280x720}" \
+  "$APP/Contents/MacOS/ultrastardx" $WINARGS \
   -songpath "$WORK/songs" -configfile "$WORK/config.ini" -scorefile "$WORK/scores.db" \
   > "$WORK/stdout.log" 2>&1 &
 PID=$!
