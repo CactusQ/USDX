@@ -88,6 +88,7 @@ type
     iVisualizerSlide,
     iOscilloscopeSlide,
     iMoveSizeSlide,
+    iCoverArtSlide,
     iBackButton
   );
 
@@ -237,6 +238,7 @@ begin
   AddSelectSlide('SING_OPTIONS_GRAPHICS_VISUALIZER', Ini.VisualizerOption, IVisualizerTranslated);
   AddSelectSlide('SING_OPTIONS_GRAPHICS_OSCILLOSCOPE', Ini.Oscilloscope, IOscilloscopeTranslated);
   AddSelectSlide('SING_OPTIONS_GRAPHICS_MOVIE_SIZE', Ini.MovieSize, IMovieSizeTranslated);
+  AddSelectSlide('SING_OPTIONS_GRAPHICS_COVER_ART', Ini.CoverArtViz, ICoverArtViz); // longq
 end;
 
 end.

@@ -42,7 +42,7 @@ PY
   PID=$!
   for _ in $(seq 1 "${TIMEOUT:-240}"); do kill -0 $PID 2>/dev/null || break; sleep 1; done
   if kill -0 $PID 2>/dev/null; then echo "TIMEOUT, killing"; kill $PID; RC=124; else wait $PID; RC=$?; fi
-  { [ -s "$LOGD/Error.log" ] && cat "$LOGD/Error.log" || cat "$WORK/stdout.log"; } 2>/dev/null | grep -a 'AUTOTEST' | sed 's/^.*AUTOTEST /  /'
+  { [ -s "$LOGD/Error.log" ] && cat "$LOGD/Error.log" || cat "$WORK/stdout.log"; } 2>/dev/null | grep -a 'AUTOTEST\|cover viz' | sed 's/^.*AUTOTEST /  /'
   echo "  exit=$RC"
   [ "$RC" = 0 ] || RC_ALL=$RC
   rm -rf "$WORK" "$DATA" "$LOGD"

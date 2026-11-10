@@ -660,6 +660,11 @@ type
 var
   LyricsState: TLyricsState;
   SoundLib: TSoundLibrary;
+  // longq: audio callback health (written only by the audio thread, read by the autotest)
+  LongqAudioCallbacks: int64 = 0;   // callbacks while a song plays
+  LongqAudioLate: int64 = 0;        // callback took longer than the audio it delivered (= an underrun)
+  LongqAudioMaxUs: int64 = 0;       // slowest callback, microseconds
+  LongqAudioBudgetUs: int64 = 0;    // audio length per callback, microseconds
 
 procedure InitializeSound;
 procedure InitializeVideo;

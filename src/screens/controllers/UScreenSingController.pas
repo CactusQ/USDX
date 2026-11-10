@@ -230,7 +230,8 @@ uses
   UWebSDK,
   Classes,
   Math,
-  ULongqAutotest;
+  ULongqAutotest,
+  ULongqCoverViz;
 
 const
   MAX_MESSAGE = 3;
@@ -1005,6 +1006,7 @@ var
   Index:      integer;
   VideoFile:  IPath;
   BgFile:     IPath;
+  CoverViz:   IVideo;
   success:    boolean;
   AudioEnd:   real;
 
@@ -1215,6 +1217,22 @@ begin
     fCurrentVideo := Visualization.Open(PATH_NONE);
     if fCurrentVideo <> nil then
       fCurrentVideo.Play;
+  end;
+
+  {*
+   * longq: generative cover-art visualizer (Options > Graphics > Cover Art: Auto = songs
+   * without a video, also when Visualization is Off; Always = every song)
+   *}
+  if LongqCoverVizWanted(fVideoClip <> nil) then
+  begin
+    CoverViz := LongqCoverVizOpen(CurrentSong);
+    if CoverViz <> nil then
+    begin
+      fCurrentVideo := CoverViz;
+      fShowVisualization := true;
+      fShowBackground := false;
+      fCurrentVideo.Play;
+    end;
   end;
 
   // prepare lyrics timer

@@ -1094,11 +1094,25 @@ end;
 procedure TAudioPlayback_SoftMixer.AudioCallback(Buffer: PByteArray; Size: integer);
 var
   OldMask: TFPUExceptionMask;
+  T0, Us, Budget: int64;
 begin
+  T0 := SDL_GetPerformanceCounter;
   OldMask := GetExceptionMask;
   SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide, exOverflow, exUnderflow, exPrecision]);
   MixerStream.ReadData(Buffer, Size);
   SetExceptionMask(OldMask);
+  // longq: callback health. Late = the callback needed longer than the audio it produced.
+  if (MusicStream <> nil) and (FormatInfo <> nil) and (FormatInfo.BytesPerSec > 0) then
+  begin
+    Us := (SDL_GetPerformanceCounter - T0) * 1000000 div SDL_GetPerformanceFrequency;
+    Budget := Round(Size / FormatInfo.BytesPerSec * 1000000);
+    LongqAudioBudgetUs := Budget;
+    Inc(LongqAudioCallbacks);
+    if Us > LongqAudioMaxUs then
+      LongqAudioMaxUs := Us;
+    if Us > Budget then
+      Inc(LongqAudioLate);
+  end;
 end;
 
 function TAudioPlayback_SoftMixer.GetMixer(): TAudioMixerStream;

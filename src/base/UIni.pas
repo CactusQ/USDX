@@ -166,6 +166,7 @@ type
       ResolutionFullscreen:     integer;   // Resolution for real fullscreen (changing Video mode)
       Depth:          integer;
       VisualizerOption: integer;
+      CoverArtViz:      integer; // longq: 0 off, 1 auto (songs without video), 2 always
       FullScreen:     integer;
       TextureSize:    integer;
       Oscilloscope:   integer;
@@ -431,6 +432,7 @@ const
   IReadingLine:   array[0..2] of UTF8String = ('Off', 'Above', 'Below');
   IFurigana:      array[0..1] of UTF8String = ('Off', 'On');
   ILyricVersions: array[0..1] of UTF8String = ('Off', 'On');
+  ICoverArtViz:   array[0..2] of UTF8String = ('Off', 'Auto', 'Always');
   IReadingSize:   array[0..5] of UTF8String = ('50%', '60%', '70%', '80%', '90%', '100%');
   IReadingSizeVals: array[0..5] of real = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0);
 
@@ -1708,6 +1710,7 @@ begin
   //            IniFile.ReadString('Graphics', 'Visualization', 'Off')));
   // || VisualizerOption := TVisualizerOption(GetArrayIndex(IVisualizer, IniFile.ReadString('Graphics', 'Visualization', 'Off')));
   VisualizerOption := ReadArrayIndex(IVisualizer, IniFile, 'Graphics', 'Visualization', IGNORE_INDEX, 'WhenNoVideo'); // longq default
+  CoverArtViz := ReadArrayIndex(ICoverArtViz, IniFile, 'Graphics', 'CoverArt', 1);
 
 {**
  * Background music
@@ -1941,6 +1944,7 @@ begin
 
     // Visualization
     IniFile.WriteString('Graphics', 'Visualization', IVisualizer[VisualizerOption]);
+    IniFile.WriteString('Graphics', 'CoverArt', ICoverArtViz[CoverArtViz]);
 
     // Resolution
     IniFile.WriteString('Graphics', 'Resolution', GetResolution);

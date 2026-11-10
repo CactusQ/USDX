@@ -272,6 +272,7 @@ uses
 {$IFDEF UseProjectM}
   // must be after UVideo, so it will not be the default video module
   UVisualizer               in 'media\UVisualizer.pas',
+  ULongqCoverViz            in 'media\ULongqCoverViz.pas',
 {$ENDIF}
 {$IFDEF UseBASSInput}
   UAudioInput_Bass          in 'media\UAudioInput_Bass.pas',
