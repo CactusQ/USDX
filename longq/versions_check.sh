@@ -9,6 +9,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LIVE="$HOME/Library/Application Support/UltraStarDeluxe2026.2.0/songs"
 SONGS="${1:-$LIVE}"
+STAGED="${USDX_STAGED:-$HOME/.local/share/usdx_ai/staged_songs}"
 WORK="$(mktemp -d -t usdx-versions)"
 NAME="UltraStarDeluxe-versions-check-$$"
 DATA="$HOME/Library/Application Support/$NAME"
@@ -28,7 +29,8 @@ for d in "_NEW_AI/f5ve - UFO" "_NEW_AI/f5ve - UFO (AI)" "_NEW_AI/f5ve - UFO (AI 
          "_NEW_AI/BLACKPINK - As If It's Your Last (AI)" "_NEW_AI/BLACKPINK - As If It's Your Last (AI romaji)" \
          "BLACKPINK - As If Its Your Last" "Lady Gaga, Bradley Cooper - Shallow" "_NEW_AI/Nelly - Hot In Herre (AI)"; do
   mkdir -p "$T/$d"
-  find "$LIVE/$d" -maxdepth 1 \( -name '*.txt' -o -name '*.mp3' -o -name '*.reading' \) -exec cp -p {} "$T/$d/" \;
+  SRC="$LIVE/$d"; [ -d "$SRC" ] || SRC="$STAGED/$d"   # fixtures may be staged out of the live library
+  find "$SRC" -maxdepth 1 \( -name '*.txt' -o -name '*.mp3' -o -name '*.reading' \) -exec cp -p {} "$T/$d/" \;
 done
 mkdir -p "$DATA"
 printf '[Directories]\nSongDir1=%s\n' "$T" > "$DATA/config.ini"
