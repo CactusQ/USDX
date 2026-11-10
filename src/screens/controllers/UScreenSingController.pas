@@ -567,6 +567,20 @@ begin
         AudioPlayback.ToggleKaraoke;
       end;
 
+      // longq seek keys (operator 2026-11-10): 1 = -15 s, 2 = -5 s, 3 = +5 s, 4 = +15 s.
+      // Same path as Right/Left: audio, video, lyrics and scoring move together; clamped to
+      // the song; no-op in medley and while paused.
+      SDLK_1, SDLK_2, SDLK_3, SDLK_4:
+      begin
+        if SDL_ModState = 0 then
+          case PressedKey of
+            SDLK_1: SeekTo(AudioPlayback.Position - 15.0);
+            SDLK_2: SeekTo(AudioPlayback.Position - 5.0);
+            SDLK_3: SeekTo(AudioPlayback.Position + 5.0);
+            SDLK_4: SeekTo(AudioPlayback.Position + 15.0);
+          end;
+      end;
+
       // longq seek: Right/Left (or Ctrl+Right/Left) = +/- 5 s.
       // Plain arrows because macOS grabs Ctrl+arrows for Spaces.
       SDLK_RIGHT:
@@ -1479,13 +1493,13 @@ end;
 // jump to ~2 s before the next sung line when that is more than 5 s away
 procedure TScreenSingController.SkipIntro();
 const
-  SKIP_MIN_AHEAD = 7.0;
+  SKIP_MIN_AHEAD = 6.0; // operator 2026-11-10: under 6 s away = no-op
 var
   T, L, N, NextBeat: integer;
   NextNote: real;
 begin
   // longq: S = jump to 5 s before the NEXT note (any point in the song, not only the intro),
-  // then run the normal count-in into that note. Nothing happens if it is < 7 s away.
+  // then run the normal count-in into that note. Nothing happens if it is < 6 s away.
   if Paused or (ScreenSong.Mode = smMedley) then
     Exit;
   NextBeat := MaxInt;

@@ -71,6 +71,8 @@ var
   Jumped: boolean = false;
   Frames: cardinal = 0;
   SeekLoopN: integer = 0;
+  NumKeyDone: integer = 0;
+  NumKeyStart: real = 0;
   SeekLoopDone: integer = 0;
   FrameT0: cardinal = 0;
   FrameLast: cardinal = 0;
@@ -175,7 +177,7 @@ begin
         for K := 0 to System.High(CatSongs.Song[I].Score[D]) do
           AutotestLog(Format('highscore difficulty %d #%d: %s %d (%s)', [D, K + 1,
             CatSongs.Song[I].Score[D][K].Name, CatSongs.Song[I].Score[D][K].Score, CatSongs.Song[I].Score[D][K].Date]));
-      PlayersPlay := 1;
+      PlayersPlay := StrToIntDef(GetEnvironmentVariable('LONGQ_AUTOTEST_PLAYERS'), 1); // 2 = duet both tracks
       // what the player-name screen normally does before singing
       LoadPlayersColors;
       Theme.ThemeScoreLoad;
@@ -274,6 +276,45 @@ begin
   LogScore('after ' + Name);
 end;
 
+{ seek keys: 0..3 = keys 1..4 from here, 4 = key 1 near the start (clamp 0), 5 = key 4 near the end }
+procedure NumKeyCheck(Which: integer);
+const
+  Keys: array[0..3] of cardinal = (SDLK_1, SDLK_2, SDLK_3, SDLK_4);
+  Deltas: array[0..3] of real = (-15, -5, 5, 15);
+var
+  K: integer;
+  Before, After, Want, Len: real;
+  LineOk: boolean;
+begin
+  Len := AudioPlayback.Length;
+  if Which = 0 then
+    NumKeyStart := AudioPlayback.Position;
+  case Which of
+    4: begin ScreenSing.SeekTo(3); K := 0; end;
+    5: begin ScreenSing.SeekTo(Len - 8); K := 3; end;
+  else
+    K := Which;
+    if AudioPlayback.Position < 40 then
+      ScreenSing.SeekTo(40); // room for -15 s
+  end;
+  Before := AudioPlayback.Position;
+  Want := Before + Deltas[K];
+  if Want < 0 then Want := 0;
+  if Want > Len - 1 then Want := Len - 1;
+  Key(Keys[K], Format('key %d (%.0f s)', [K + 1, Deltas[K]]));
+  After := AudioPlayback.Position;
+  // the current lyric line must be the one at the new time
+  LineOk := (CurrentSong.Tracks[0].CurrentLine >= 0) and
+    ((CurrentSong.Tracks[0].CurrentLine = 0) or
+     (LyricsState.CurrentBeat >= CurrentSong.Tracks[0].Lines[CurrentSong.Tracks[0].CurrentLine].StartBeat));
+  AutotestLog(Format('CHECK key %d%s: pos %.2f -> %.2f s, want %.2f, error %.3f s, lyric line %d %s -> %s; %s',
+    [K + 1, IfThen(Which >= 4, ' (clamp)', ''), Before, After, Want, After - Want,
+     CurrentSong.Tracks[0].CurrentLine, IfThen(LineOk, 'ok', 'STALE'),
+     IfThen((Abs(After - Want) <= 0.15) and LineOk, 'PASS', 'FAIL'), VideoPos]));
+  if Which = 5 then
+    ScreenSing.SeekTo(NumKeyStart); // back before the song can end (end is checked per frame)
+end;
+
 { (a) S from here: before/after/target/video, (e) nothing when the next note is < 7 s away }
 procedure SkipCheck(const Name: string);
 var
@@ -284,12 +325,12 @@ begin
   Key(SDLK_S, Name);
   After := AudioPlayback.Position;
   Jumped := Abs(After - Before) > 0.5;
-  if Next - Before >= 7 then
+  if Next - Before >= 6 then
     AutotestLog(Format('CHECK %s: pos %.2f -> %.2f s, next note %.2f s, target %.2f s, error %.3f s -> %s; %s',
       [Name, Before, After, Next, Next - 5, After - (Next - 5),
        IfThen(Abs(After - (Next - 5)) <= 0.1, 'PASS', 'FAIL'), VideoPos]))
   else
-    AutotestLog(Format('CHECK %s: next note %.2f s is only %.2f s away (< 7 s): pos %.2f -> %.2f s -> %s',
+    AutotestLog(Format('CHECK %s: next note %.2f s is only %.2f s away (< 6 s): pos %.2f -> %.2f s -> %s',
       [Name, Next, Next - Before, Before, After, IfThen(Abs(After - Before) < 0.1, 'PASS (no jump)', 'FAIL (jumped)')]));
   CountTarget := Next;
 end;
@@ -323,7 +364,7 @@ begin
        end;
     1: if not Jumped then
        begin
-         AutotestLog('no jump in the intro (first note < 7 s away): count-in checks n/a here');
+         AutotestLog('no jump in the intro (first note < 6 s away): count-in checks n/a here');
          Step := 2;
        end
        else begin
@@ -352,7 +393,15 @@ begin
     6: Key(SDLK_RIGHT, 'seek +5 s (Right)');
     7: Shot('after_seek_forward');
     8: Key(SDLK_LEFT, 'seek -5 s (Left)');
-    9: Shot('after_seek_back');
+    9: if NumKeyDone < 6 then
+       begin
+         // keys 1/2/3/4 (-15/-5/+5/+15 s) and the clamps at song start and end
+         NumKeyCheck(NumKeyDone);
+         Inc(NumKeyDone);
+         Dec(Step);
+       end
+       else
+         Shot('after_seek_back');
     10: begin
          // longest instrumental gap (>= 10 s, no track singing) after the current position
          GapAt := -1;

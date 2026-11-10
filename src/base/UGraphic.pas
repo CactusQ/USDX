@@ -558,7 +558,9 @@ begin
 
   // Borderless fullscreen and windows were started with SDL_WINDOW_HIDDEN flag to avoid flickers during OpenGL
   // initialization, they need to be shown to the user after the OpenGL context is successfully created
-  if ((CurrentWindowMode = Mode_Borderless) or (CurrentWindowMode = Mode_Windowed)) then
+  // longq: LONGQ_HIDDEN=1 keeps a windowed test run invisible (offscreen checks while someone plays)
+  if ((CurrentWindowMode = Mode_Borderless) or (CurrentWindowMode = Mode_Windowed)) and
+     ((GetEnvironmentVariable('LONGQ_HIDDEN') = '') or (CurrentWindowMode = Mode_Borderless)) then
   begin
     SDL_ShowWindow(screen);
     if (CurrentWindowMode = Mode_Borderless) then
