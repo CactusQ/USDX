@@ -1635,8 +1635,17 @@ begin
   Result := SDL_GL_GetSwapInterval() = 1;
 end;
 
+var
+  LongqHiddenRun: integer = -1;  // longq: -1 unknown, 0 normal, 1 LONGQ_HIDDEN test run
+
 procedure TRenderer_OpenGLBase.SwapBuffers();
 begin
+  // longq: a LONGQ_HIDDEN test window must never become visible (one did on 2026-11-10 after a mode
+  // change re-showed it); re-hide it on every frame instead of trusting window creation alone
+  if LongqHiddenRun < 0 then
+    LongqHiddenRun := Ord(GetEnvironmentVariable('LONGQ_HIDDEN') <> '');
+  if (LongqHiddenRun = 1) and ((SDL_GetWindowFlags(Screen) and SDL_WINDOW_SHOWN) <> 0) then
+    SDL_HideWindow(Screen);
   SDL_GL_SwapWindow(Screen);
   {$IFDEF DEBUG_MODE}
   RaiseExceptionIfError;
