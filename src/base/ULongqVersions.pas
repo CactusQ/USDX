@@ -28,6 +28,11 @@ function LongqCycleVersion(Cur: TSong; Dir: integer): TSong;
 { Title for the song screen: "<title>  < <version> >" for grouped charts, the plain title otherwise. }
 function LongqVersionTitle(S: TSong): UTF8String;
 function LongqHasVersions(S: TSong): boolean;
+{ Make Target (a member of Cur's group) the group's entry and remember it in the data dir
+  (lyric_versions.txt, read at the next start). Returns Target, or Cur if Target is not a member. }
+function LongqSetVersion(Cur, Target: TSong): TSong;
+{ Position of S in its group, -1 without siblings. }
+function LongqVersionIndex(S: TSong): integer;
 { Headless check: with LONGQ_VERSIONS_DRYRUN=1 (run with SDL_VIDEODRIVER=dummy and a scratch
   USDX_DATA_NAME) load the song folders of the config, group, pick, re-group, print, exit. }
 procedure LongqVersionsDryRun;
@@ -36,11 +41,78 @@ implementation
 
 uses
   SysUtils,
+  Math,
   UCatCovers,
   UIni,
   ULog,
   ULongqVersionKey,
+  UPlatform,
   USongs;
+
+{ ---- remembered picks: "<group key>=<chart path>" lines in <data dir>/lyric_versions.txt ---- }
+var
+  Picks: TStringList = nil;
+
+function PicksFile: string;
+begin
+  Result := Platform.GetGameUserPath.Append('lyric_versions.txt').ToNative;
+end;
+
+procedure LoadPicks;
+begin
+  if Picks <> nil then
+    Exit;
+  Picks := TStringList.Create;
+  Picks.NameValueSeparator := #9;
+  try
+    if FileExists(PicksFile) then
+      Picks.LoadFromFile(PicksFile);
+  except
+    on E: Exception do
+      Log.LogWarn('lyric_versions.txt unreadable: ' + E.Message, 'LongqVersions');
+  end;
+end;
+
+procedure SavePicks;
+var
+  Tmp: string;
+begin
+  // tiny file, written only when the player changes a version; atomic replace
+  Tmp := PicksFile + '.tmp';
+  try
+    Picks.SaveToFile(Tmp);
+    if FileExists(PicksFile) then
+      DeleteFile(PicksFile);
+    RenameFile(Tmp, PicksFile);
+  except
+    on E: Exception do
+      Log.LogWarn('lyric_versions.txt not written: ' + E.Message, 'LongqVersions');
+  end;
+end;
+
+function ChartId(S: TSong): string;
+begin
+  Result := S.Path.Append(S.FileName).ToNative;
+end;
+
+function GroupId(S: TSong): string;
+var
+  Words: UTF8String;
+begin
+  // the group's first member is stable (Original first, then label, then path)
+  Result := LVGroupKey(S.VersionGroup[0].Artist, LVStripSuffix(S.VersionGroup[0].Title, Words));
+end;
+
+function LongqVersionIndex(S: TSong): integer;
+var
+  I: integer;
+begin
+  Result := -1;
+  if Assigned(S) then
+    for I := 0 to High(S.VersionGroup) do
+      if S.VersionGroup[I] = S then
+        Result := I;
+end;
 
 function LongqHasVersions(S: TSong): boolean;
 begin
@@ -148,12 +220,23 @@ begin
     LVDedupLabels(Labels);
 
     SetLength(Members, Length(Idx));
-    Pick := 0;
+    Pick := -1;
     for K := 0 to High(Idx) do
     begin
       Members[K] := Songs[Idx[K]];
       if Members[K].VersionChosen then
         Pick := K;
+    end;
+    if Pick < 0 then
+    begin
+      // first grouping after start: the pick remembered from an earlier run
+      LoadPicks;
+      TmpS := Picks.Values[LVGroupKey(Members[0].Artist, LVStripSuffix(Members[0].Title, Words))];
+      Pick := 0;
+      if TmpS <> '' then
+        for K := 0 to High(Members) do
+          if ChartId(Members[K]) = TmpS then
+            Pick := K;
     end;
     for K := 0 to High(Members) do
     begin
@@ -171,19 +254,26 @@ end;
 
 function LongqCycleVersion(Cur: TSong; Dir: integer): TSong;
 var
-  I, Pos, N: integer;
+  Pos, N: integer;
 begin
   Result := Cur;
   if not LongqHasVersions(Cur) then
     Exit;
   N := Length(Cur.VersionGroup);
-  Pos := 0;
-  for I := 0 to N - 1 do
-    if Cur.VersionGroup[I] = Cur then
-      Pos := I;
-  Result := Cur.VersionGroup[((Pos + Dir) mod N + N) mod N];
-  if Result = Cur then
+  Pos := Max(0, LongqVersionIndex(Cur));
+  Result := LongqSetVersion(Cur, Cur.VersionGroup[((Pos + Dir) mod N + N) mod N]);
+end;
+
+function LongqSetVersion(Cur, Target: TSong): TSong;
+var
+  I, N: integer;
+begin
+  Result := Cur;
+  if (not LongqHasVersions(Cur)) or (Target = Cur) or (LongqVersionIndex(Target) < 0)
+    or (Target.VersionGroup[0] <> Cur.VersionGroup[0]) then
     Exit;
+  Result := Target;
+  N := Length(Cur.VersionGroup);
   for I := 0 to N - 1 do
   begin
     Cur.VersionGroup[I].VersionHidden := true;
@@ -195,8 +285,10 @@ begin
   Result.OrderNum := Cur.OrderNum;
   Result.CatNumber := Cur.CatNumber;
   Result.Visible := Cur.Visible;
-  Log.LogStatus('lyric version: ' + Result.VersionLabel + ' -> ' + Result.Path.Append(Result.FileName).ToNative,
-    'LongqCycleVersion');
+  LoadPicks;
+  Picks.Values[GroupId(Result)] := ChartId(Result);
+  SavePicks;
+  Log.LogStatus('lyric version: ' + Result.VersionLabel + ' -> ' + ChartId(Result), 'LongqSetVersion');
 end;
 
 procedure LongqVersionsDryRun;
@@ -281,6 +373,16 @@ begin
         K := I;
     Expect(K >= 0, 'picked chart is the entry after refresh (' + Want + ')');
     Expect(S.VersionHidden and not Picked.VersionHidden, 'previous chart hidden, picked shown');
+    // restart: forget the in-memory pick, reload the sidecar, regroup
+    for I := 0 to Songs.SongList.Count - 1 do
+      TSong(Songs.SongList[I]).VersionChosen := false;
+    FreeAndNil(Picks);
+    CatSongs.Refresh;
+    K := -1;
+    for I := 0 to High(CatSongs.Song) do
+      if CatSongs.Song[I] = Picked then
+        K := I;
+    Expect(K >= 0, 'pick remembered across restart via ' + PicksFile);
   end;
   Ini.LyricVersions := 0;
   CatSongs.Refresh;

@@ -59,7 +59,9 @@ type
       AnimStartTicks: UInt32;
       LastAnimBeat:   real;
       SavedAnimBeat:  real;
+      OldLyricVersions: integer; // longq
       procedure RebuildLines;
+      procedure ReloadSongListIfVersionsChanged; // longq
 
     public
       constructor Create; override;
@@ -82,6 +84,7 @@ implementation
 
 uses
   UGraphic,
+  UScreenSong,
   UHelp,
   ULanguage,
   ULog,
@@ -99,6 +102,7 @@ type
     iReadingSlide,  // longq
     iFuriganaSlide, // longq
     iReadingSizeSlide, // longq
+    iVersionsSlide, // longq
     iBackButton
   );
 
@@ -122,6 +126,7 @@ begin
       SDLK_BACKSPACE :
         begin
           Ini.Save;
+          ReloadSongListIfVersionsChanged;
           AudioPlayback.PlaySound(SoundLib.Back);
           FadeTo(@ScreenOptions);
         end;
@@ -134,6 +139,7 @@ begin
           if SelInteraction = ord(iBackButton) then
           begin
             Ini.Save;
+            ReloadSongListIfVersionsChanged;
             AudioPlayback.PlaySound(SoundLib.Back);
             FadeTo(@ScreenOptions);
           end;
@@ -315,6 +321,7 @@ begin
   inherited;
 
   Interaction := 0;
+  OldLyricVersions := Ini.LyricVersions;
 
   if not Help.SetHelpID(ID) then
     Log.LogWarn('No Entry for Help-ID ' + ID, 'ScreenOptionsLyrics');
@@ -345,6 +352,17 @@ begin
   AddSelectSlide('SING_OPTIONS_LYRICS_READING', Ini.ReadingLine, IReadingLineTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_FURIGANA', Ini.Furigana, IFuriganaTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_READING_SIZE', Ini.ReadingSize, IReadingSize);
+  AddSelectSlide('SING_OPTIONS_LYRICS_VERSIONS', Ini.LyricVersions, IFuriganaTranslated); // longq: Off/On
+end;
+
+{ longq: "One entry per song" changed -> rebuild the song screen (same path as a sorting change) }
+procedure TScreenOptionsLyrics.ReloadSongListIfVersionsChanged;
+begin
+  if Ini.LyricVersions = OldLyricVersions then
+    Exit;
+  OldLyricVersions := Ini.LyricVersions;
+  ScreenSong.Free;
+  ScreenSong := TScreenSong.Create;
 end;
 
 end.

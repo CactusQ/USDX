@@ -107,6 +107,8 @@ uses
   URenderer,
   USong,
   USongs,
+  ULongqVersions,
+  Math,
   UUnicodeUtils;
 
 function TScreenSongMenu.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
@@ -196,6 +198,8 @@ begin
             if (Interaction=3) or (Interaction=4) or (Interaction=5)
               or (Interaction=8) or (Interaction=9) or (Interaction=10) then
                 InteractInc;
+            if (CurMenu = SM_Song) and (Interaction = 3) then // longq: Lyrics row
+              ScreenSong.SetLyricVersion(SelectValue1);
           end
           else
           begin
@@ -211,6 +215,8 @@ begin
             if (Interaction=3) or (Interaction=4) or (Interaction=5)
               or (Interaction=8) or (Interaction=9) or (Interaction=10) then
                 InteractDec;
+            if (CurMenu = SM_Song) and (Interaction = 3) then // longq: Lyrics row
+              ScreenSong.SetLyricVersion(SelectValue1);
           end
           else
           begin
@@ -345,8 +351,10 @@ end;
 procedure TScreenSongMenu.MenuShow(sMenu: byte);
 var
   I, MSongs: integer;
+  LyricSong: TSong;
 begin
   Interaction := 0; // reset interaction
+  SelectsS[0].Text.Text := Theme.SongMenu.SelectSlide1.Text; // longq: SM_Song relabels it "Lyrics"
   Visible := true;  // set visible
   case sMenu of
     SM_Main:
@@ -382,7 +390,8 @@ begin
         Button[3].Visible := true;
         Button[4].Visible := true;
 
-        SelectsS[0].Visible := false;
+        // longq: "Lyrics" row = the song's lyric versions (Original / Romaji / Kanji + furigana ...)
+        SelectsS[0].Visible := LongqHasVersions(CatSongs.Song[ScreenSong.Interaction]);
         SelectsS[1].Visible := false;
         SelectsS[2].Visible := false;
 
@@ -391,6 +400,19 @@ begin
         Button[2].Text[0].Text := Language.Translate('SONG_MENU_PLAYLIST_ADD');
         Button[3].Text[0].Text := Language.Translate('SONG_MENU_EDIT');
         Button[4].Text[0].Text := Language.Translate('SONG_MENU_CANCEL');
+
+        if SelectsS[0].Visible then
+        begin
+          LyricSong := CatSongs.Song[ScreenSong.Interaction];
+          SetLength(ISelections1, Length(LyricSong.VersionGroup));
+          for I := 0 to High(LyricSong.VersionGroup) do
+            ISelections1[I] := LyricSong.VersionGroup[I].VersionLabel;
+          SelectValue1 := Max(0, LongqVersionIndex(LyricSong));
+          SelectsS[0].Text.Text := Language.Translate('SONG_MENU_LYRICS');
+          UpdateSelectSlideOptions(0, ISelections1, SelectValue1);
+          Interaction := 3; // left/right picks, Enter sings
+        end;
+
       end;
 
     SM_Medley:
@@ -835,9 +857,11 @@ begin
               MenuShow(SM_Playlist_Add);
             end;
 
-          3: // selectslide 1
+          3: // selectslide 1: longq "Lyrics" row, Enter sings the picked chart
             begin
-              //Dummy
+              ScreenSong.SetLyricVersion(SelectValue1);
+              ScreenSong.StartSong;
+              Visible := false;
             end;
 
           4: // selectslide 2

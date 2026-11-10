@@ -312,6 +312,7 @@ type
 
       procedure ColorDuetNameSingers;
       procedure CycleLyricVersion(Dir: integer); // longq
+      procedure SetLyricVersion(Index: integer); // longq: song menu "Lyrics" row
 
       procedure StopMusicPreview();
       procedure StopVideoPreview();
@@ -1306,6 +1307,11 @@ begin
                 else
                 begin
                   //Do the Action that is specified in Ini
+                  // longq: a song with several lyric versions opens the song menu (Lyrics row
+                  // first, Enter sings the picked chart) whatever OnSongClick says
+                  if LongqHasVersions(CatSongs.Song[Interaction]) and (Ini.OnSongClick <> 2) then
+                    ScreenSongMenu.MenuShow(SM_Song)
+                  else
                   case Ini.OnSongClick of
                     0: StartSong;
                     1: SelectPlayers;
@@ -2017,6 +2023,24 @@ begin
   DuetChange := false;
   RapToFreestyle := false;
   AudioPlayback.PlaySound(SoundLib.Change);
+  SetScroll;
+end;
+
+procedure TScreenSong.SetLyricVersion(Index: integer);
+var
+  Cur, Next: TSong;
+begin
+  if (CatSongs.VisibleSongs = 0) or (Interaction < 0) or (Interaction > High(CatSongs.Song)) then
+    Exit;
+  Cur := CatSongs.Song[Interaction];
+  if (not LongqHasVersions(Cur)) or (Index < 0) or (Index > High(Cur.VersionGroup)) then
+    Exit;
+  Next := LongqSetVersion(Cur, Cur.VersionGroup[Index]);
+  if Next = Cur then
+    Exit;
+  CatSongs.Song[Interaction] := Next;
+  DuetChange := false;
+  RapToFreestyle := false;
   SetScroll;
 end;
 
