@@ -437,7 +437,7 @@ const
     '    float d = p.y - y;'#10 +
     '    float curtain = smoothstep(0.0, 0.03, d) * exp(-d * (3.2 - 1.5 * uBass));'#10 +
     '    curtain *= 0.4 + 0.6 * fbm(vec2(x * 6.0, uTime * 0.05 + fi));'#10 +
-    '    vec3 ac = mix(uPal[2 + i], vec3(0.3, 1.0, 0.7), 0.35);'#10 +
+    '    vec3 ac = mix(vivid(uPal[2 + i], 0.9), vec3(0.3, 1.0, 0.7), 0.1);'#10 +
     '    col += ac * curtain * (0.55 + 0.4 * uEnergy + 0.35 * band(0.2 + 0.3 * fi));'#10 +
     '  }'#10 +
     '  col = mix(col, cover(p * 0.4, 7.0) * 0.25, 0.25 * uHasCover);'#10 +
