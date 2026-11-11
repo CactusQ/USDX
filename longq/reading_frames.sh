@@ -45,7 +45,7 @@ PID=$!
 for _ in $(seq 1 "${TIMEOUT:-240}"); do kill -0 $PID 2>/dev/null || break; sleep 1; done
 if kill -0 $PID 2>/dev/null; then echo "TIMEOUT, killing"; kill $PID; sleep 2; kill -9 $PID 2>/dev/null; RC=124; else wait $PID; RC=$?; fi
 { [ -s "$LOGD/Error.log" ] && cat "$LOGD/Error.log" || cat "$WORK/stdout.log"; } 2>/dev/null | grep -a 'AUTOTEST\|reading' | sed 's/^.*AUTOTEST /  /' | head -20
-i=0; for p in $(ls -tr "$DATA"/screenshots/*.png 2>/dev/null); do i=$((i+1)); cp "$p" "$OUT/${TAG}_$i.png"; done
+i=0; for p in $(ls -tr "$DATA"/screenshots/*.jpg 2>/dev/null); do i=$((i+1)); cp "$p" "$OUT/${TAG}_$i.jpg"; done
 echo "$TAG: exit=$RC frames=$i"
 mv "$WORK" "$OUT/.work_$TAG" 2>/dev/null; mv "$DATA" "$OUT/.data_$TAG" 2>/dev/null; mv "$LOGD" "$OUT/.log_$TAG" 2>/dev/null
 exit $RC

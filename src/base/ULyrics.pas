@@ -515,6 +515,9 @@ begin
     RequestWidth  := UpperLineW;
     RequestHeight := UpperLineH;
   //end;
+  // longq: a slot grown for annotation rows keeps the stock lyric size
+  if (BaseLineH > 0) and (BaseLineH < RequestHeight) then
+    RequestHeight := BaseLineH;
 
   // set font size to a reasonable value
   LyricLine.Height := RequestHeight * 0.9;
@@ -752,6 +755,16 @@ begin
   // center lyrics
   LyricX := X + (W - Line.Width) / 2;
   LyricY := Y + (H - Line.Height) / 2;
+  // longq: in a slot grown for annotations (Reading space = Grow) the lyric sits in the stock-height
+  // part and the extra room goes where the annotation row is: above (ruby / reading above), below
+  // (reading below) or both (double line: centred). Song-level, so lines without readings do not jump.
+  if (ReadingMode <> 0) and (BaseLineH > 0) and (H > BaseLineH + 1) and not DoubleLine then
+  begin
+    if ReadingMode = 2 then
+      LyricY := Y + (BaseLineH - Line.Height) / 2
+    else
+      LyricY := Y + H - BaseLineH + (BaseLineH - Line.Height) / 2;
+  end;
   // longq: the lyric stays at the stock position; the annotation of the current (upper) line sits
   // in the free space just above it (ReadingLine=Above) or just below it (Below)
   if ReadingMode = 2 then
