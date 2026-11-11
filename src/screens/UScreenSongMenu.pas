@@ -408,7 +408,9 @@ begin
           for I := 0 to High(LyricSong.VersionGroup) do
             ISelections1[I] := LyricSong.VersionGroup[I].VersionLabel;
           SelectValue1 := Max(0, LongqVersionIndex(LyricSong));
-          SelectsS[0].Text.Text := Language.Translate('SONG_MENU_LYRICS');
+          // the theme gives this slide no label room (SongMenuSelectSlide1 W = 0): a "Lyrics" label was drawn
+          // over the value ("LyHangul + reading", 2026-11-11 screenshot), so the row shows the version only
+          SelectsS[0].Text.Text := '';
           UpdateSelectSlideOptions(0, ISelections1, SelectValue1);
           Interaction := 3; // left/right picks, Enter sings
         end;

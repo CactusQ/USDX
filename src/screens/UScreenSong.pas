@@ -2024,6 +2024,9 @@ begin
   RapToFreestyle := false;
   AudioPlayback.PlaySound(SoundLib.Change);
   SetScroll;
+  // list rows keep their text until a refresh: without it the row kept the old version label (2026-11-11)
+  if TSongMenuMode(Ini.SongMenu) = smList then
+    SetListScrollRefresh;
 end;
 
 procedure TScreenSong.SetLyricVersion(Index: integer);
@@ -2042,6 +2045,8 @@ begin
   DuetChange := false;
   RapToFreestyle := false;
   SetScroll;
+  if TSongMenuMode(Ini.SongMenu) = smList then
+    SetListScrollRefresh;
 end;
 
 procedure TScreenSong.ColorDuetNameSingers();
@@ -3449,6 +3454,7 @@ begin
   Equalizer.Draw;
 
   DrawExtensions;
+  AutotestAfterSongScreen; // longq: queued screenshots see the finished frame
 
   //if (Mode = smPartyTournament) then
   //  PartyTimeLimit();

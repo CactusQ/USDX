@@ -5,7 +5,8 @@
 #   SDL_AUDIODRIVER=dummy (nothing reaches the speakers, the Mac volume is not touched),
 #   throwaway data dir + log dir (USDX_DATA_NAME), scratch config/scores, songs symlinked read-only.
 # Env: RES (default 960x540), LONGQ_AUTOTEST_PLAYERS (2 = duet both tracks), APP, TIMEOUT (s, 240),
-#      NICE (default 15; 0 for night benches so other jobs do not starve the audio thread).
+#      NICE (default 15; 0 for night benches so other jobs do not starve the audio thread), SONGMENU,
+#      LONGQ_AUTOTEST_MENUSHOT=1 (version-picker screenshots, kept in $SHOTS if set).
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${APP:-$REPO/UltraStar Deluxe.app}"
@@ -39,6 +40,7 @@ for sec, k, v in [("Directories", "SongDir1", ""), ("Sound", "BackgroundMusic", 
                   ("Sound", "PreviewVolume", "0"), ("Game", "Tabs", "Off"), ("Graphics", "FullScreen", "Off")]:
     t = put(t, sec, k, v)
 if os.environ.get("VIS"): t = put(t, "Graphics", "Visualization", os.environ["VIS"])
+if os.environ.get("SONGMENU"): t = put(t, "Game", "SongMenu", os.environ["SONGMENU"])  # Roulette/Chessboard/List
 open(dst, "w", encoding="utf-8").write(t)
 PY
   echo "== $(basename "$SONG_DIR")"
@@ -53,6 +55,7 @@ PY
   { [ -s "$LOGD/Error.log" ] && cat "$LOGD/Error.log" || cat "$WORK/stdout.log"; } 2>/dev/null | grep -a 'AUTOTEST\|cover viz' | sed 's/^.*AUTOTEST /  /'
   echo "  exit=$RC"
   [ "$RC" = 0 ] || RC_ALL=$RC
+  [ -n "${SHOTS:-}" ] && [ -d "$DATA/screenshots" ] && mkdir -p "$SHOTS" && cp "$DATA"/screenshots/*.jpg "$SHOTS"/ 2>/dev/null
   rm -rf "$WORK" "$DATA" "$LOGD"
 done
 exit $RC_ALL

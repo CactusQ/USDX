@@ -37,6 +37,8 @@ procedure AutotestLog(const Msg: string);
 procedure AutotestOnMainMenu;
 { called from TScreenSong.Draw }
 procedure AutotestOnSongScreen;
+{ called at the end of TScreenSong.Draw (LONGQ_AUTOTEST_MENUSHOT screenshots) }
+procedure AutotestAfterSongScreen;
 { called at the end of TScreenSingController.Draw }
 procedure AutotestOnSingFrame;
 
@@ -158,6 +160,75 @@ begin
   Display.FadeTo(@ScreenSong);
 end;
 
+var
+  MenuShotStep: integer = 0;
+  MenuShotTime: cardinal = 0;
+  PendingShot: string = '';
+
+procedure LogPick(const What: string);
+var
+  S: TSong;
+begin
+  if (ScreenSong.Interaction < 0) or (ScreenSong.Interaction > High(CatSongs.Song)) then
+    Exit;
+  S := CatSongs.Song[ScreenSong.Interaction];
+  AutotestLog(Format('%s: entry %d, %s - %s, chart %s, versions %d, song menu visible %s',
+    [What, ScreenSong.Interaction, S.Artist, S.Title, S.FileName.ToUTF8, Length(S.VersionGroup),
+     BoolToStr(ScreenSongMenu.Visible, true)]));
+end;
+
+{ LONGQ_AUTOTEST_MENUSHOT=1: screenshots of the lyric-version picker on the song screen (no singing):
+  entry, L (next version), Enter (song menu, Lyrics row), Right (version in the menu), then quit }
+procedure MenuShots;
+var
+  I, V: integer;
+  Due: boolean;
+begin
+  Due := SDL_GetTicks - MenuShotTime >= 1500;
+  case MenuShotStep of
+    0: begin
+         for I := 0 to High(CatSongs.Song) do
+           AutotestLog(Format('menushot entry %d: visible %s main %s, %s - %s',
+             [I, BoolToStr(CatSongs.Song[I].Visible, true), BoolToStr(CatSongs.Song[I].Main, true),
+              CatSongs.Song[I].Artist, CatSongs.Song[I].Title]));
+         V := 0;
+         for I := 0 to High(CatSongs.Song) do
+           if CatSongs.Song[I].Visible then
+           begin
+             if not CatSongs.Song[I].Main and
+                ((AutotestSong = '') or (Pos(LowerCase(AutotestSong), LowerCase(CatSongs.Song[I].Title)) > 0)) then
+             begin
+               ScreenSong.SkipTo(V, I); // roulette mode counts visible songs, the others take the index
+               Break;
+             end;
+             Inc(V);
+           end;
+         LogPick('menushot select');
+         MenuShotStep := 1; MenuShotTime := SDL_GetTicks;
+       end;
+    1: if Due then begin PendingShot := 'song_screen'; MenuShotStep := 2; MenuShotTime := SDL_GetTicks; end;
+    2: if Due then begin ScreenSong.ParseInput(SDLK_L, 0, true); LogPick('after L');
+         PendingShot := ''; MenuShotStep := 3; MenuShotTime := SDL_GetTicks; end;
+    3: if Due then begin PendingShot := 'after_L'; MenuShotStep := 4; MenuShotTime := SDL_GetTicks; end;
+    4: if Due then begin ScreenSong.ParseInput(SDLK_RETURN, 0, true); LogPick('after Enter');
+         MenuShotStep := 5; MenuShotTime := SDL_GetTicks; end;
+    5: if Due then begin PendingShot := 'song_menu'; MenuShotStep := 6; MenuShotTime := SDL_GetTicks; end;
+    6: if Due then begin ScreenSong.ParseInput(SDLK_RIGHT, 0, true); LogPick('after Right in menu');
+         MenuShotStep := 7; MenuShotTime := SDL_GetTicks; end;
+    7: if Due then begin PendingShot := 'song_menu_right'; MenuShotStep := 8; MenuShotTime := SDL_GetTicks; end;
+    8: if Due then begin AutotestLog('menushot done, quitting'); StartedSong := true; Halt(0); end;
+  end;
+end;
+
+procedure AutotestAfterSongScreen;
+begin
+  if not AutotestActive or (PendingShot = '') then
+    Exit;
+  AutotestLog('screenshot ' + PendingShot);
+  Display.SaveScreenShot;
+  PendingShot := '';
+end;
+
 procedure AutotestOnSongScreen;
 var
   I, D, K: integer;
@@ -166,6 +237,11 @@ begin
     Exit;
   if not UpFor(SongScreenSince, 2500) then
     Exit;
+  if GetEnvironmentVariable('LONGQ_AUTOTEST_MENUSHOT') <> '' then
+  begin
+    MenuShots;
+    Exit;
+  end;
   for I := 0 to High(CatSongs.Song) do
     if (not CatSongs.Song[I].Main) and
        ((AutotestSong = '') or (Pos(LowerCase(AutotestSong), LowerCase(CatSongs.Song[I].Title)) > 0)) then
