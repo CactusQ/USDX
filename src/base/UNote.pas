@@ -40,6 +40,7 @@ uses
   UDisplay,
   UIni,
   ULog,
+  ULongqGolden,
   ULyrics,
   UMusic,
   URecord,
@@ -572,14 +573,14 @@ begin
                 // half size notes patch
                 NoteHit := true;
 
-                MaxSongPoints := MAX_SONG_SCORE - MAX_SONG_LINE_BONUS;
+                MaxSongPoints := LongqNotesPool(CP); // longq: 9000 stock, golden pool split when the track has bonus notes
 
                 // Note: ScoreValue is the sum of all note values of the song
                 // (MaxSongPoints / ScoreValue) is the points that a player
                 // gets for a hit of one beat of a normal note
                 // CurNotePoints is the amount of points that is meassured
                 // for a hit of the note per full beat
-                CurNotePoints := (MaxSongPoints / Screen.SeekScoreValue(CP)) * ScoreFactor[CurrentLineFragment.NoteType];
+                CurNotePoints := (MaxSongPoints / Screen.SeekScoreValue(CP)) * LongqNoteWeight(CP, CurrentLineFragment.NoteType);
 
                 case CurrentLineFragment.NoteType of
                   ntNormal:    CurrentPlayer.Score       := CurrentPlayer.Score       + CurNotePoints;
@@ -587,6 +588,8 @@ begin
                   ntRap:       CurrentPlayer.Score       := CurrentPlayer.Score       + CurNotePoints;
                   ntRapGolden: CurrentPlayer.ScoreGolden := CurrentPlayer.ScoreGolden + CurNotePoints;
                 end;
+                if (CurrentLineFragment.NoteType = ntGolden) or (CurrentLineFragment.NoteType = ntRapGolden) then
+                  LongqGoldenHit(PlayerIndex, CP, SentenceDetected, LineFragmentIndex, CurNotePoints); // longq "+N" pop, spot count
               end;
             end; // operation
           end; // for
@@ -654,6 +657,7 @@ begin
           end; // if SentenceDetected = SentenceMax
 
         end; // if Detected
+        LongqGoldenBeat(PlayerIndex, ActualBeat); // longq: pop the bonus points once the golden note is over
       end;
     end; // for PlayerIndex
   end; // for ActualBeat

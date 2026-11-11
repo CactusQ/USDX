@@ -45,6 +45,7 @@ procedure AutotestOnSingFrame;
 implementation
 
 uses
+  ULongqGolden,
   SysUtils,
   Math,
   StrUtils,
@@ -287,7 +288,7 @@ begin
     [What, AudioPlayback.Position, LyricsState.CurrentBeatD, CurrentSong.Tracks[T].CurrentLine,
      ScreenSing.SeekSkippedValue[T], CurrentSong.Tracks[T].ScoreValue, ScreenSing.SeekSkippedLines[T],
      ScreenSing.NumEmptySentences[T],
-     Remaining * (MAX_SONG_SCORE - MAX_SONG_LINE_BONUS) / ScreenSing.SeekScoreValue(T),
+     Remaining * LongqNotesPool(T) / ScreenSing.SeekScoreValue(T),
      Player[0].ScoreTotalInt, Player[0].Score, Player[0].ScoreGolden, Player[0].ScoreLine]));
 end;
 

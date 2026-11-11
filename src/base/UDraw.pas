@@ -99,6 +99,7 @@ var
 implementation
 
 uses
+  ULongqGolden,
   SysUtils,
   Math,
   UText,
@@ -819,6 +820,10 @@ begin
           end;
           Renderer.DrawTexture(Texture);
 
+          // longq: where a hit bonus note sits, for its "+N" pop
+          if Hit and ((NoteType = ntGolden) or (NoteType = ntRapGolden)) then
+            LongqGoldenSaveRec(PlayerIndex, Rec.Right, Rec.Top);
+
           // Perfect note is stored
           if Perfect and (Ini.EffectSing=1) then
           begin
@@ -840,6 +845,7 @@ begin
 
       if (Ini.EffectSing = 1) then
         GoldenRec.GoldenNoteTwinkle(Rec.Top,Rec.Bottom,Rec.Right, PlayerIndex);
+      LongqGoldenDrawPops(PlayerIndex);
     end; // if
   end; // if
 end;

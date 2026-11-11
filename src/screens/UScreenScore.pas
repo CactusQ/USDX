@@ -219,6 +219,7 @@ const
 implementation
 
 uses
+  ULongqGolden,
   UAvatars,
   UGraphic,
   UHelp,
@@ -233,6 +234,10 @@ uses
   USong,
   UTime,
   UUnicodeUtils;
+
+var
+  LongqGoldenLabel: array [0..12] of UTF8String; // theme label of the golden row, restored for songs without spots
+
 
 {
  *****************************
@@ -1438,6 +1443,7 @@ end;
 procedure TscreenScore.FillPlayerItems(PlayerNumber: integer);
 var
   ThemeIndex: integer;
+  GoldTrack: integer;
 begin
   ThemeIndex := PlayerPositionMap[PlayerNumber-1].Position;
   if (ThemeIndex > 0) and ((ScreenAct = PlayerPositionMap[PlayerNumber-1].Screen) or (PlayerPositionMap[PlayerNumber-1].BothScreens)) then
@@ -1451,6 +1457,18 @@ begin
 
     Statics[StaticBoxLightest[ThemeIndex]].Texture.Alpha := (BarGolden_EaseOut_Step / 100);
     Text[TextGoldenNotes[ThemeIndex]].Alpha             := (BarGolden_EaseOut_Step / 100);
+    // longq: "Bonus 2/3" = bonus spots hit (at least half of the spot's beats) of all spots in the song
+    if LongqGoldenLabel[ThemeIndex] = '' then
+      LongqGoldenLabel[ThemeIndex] := Text[TextGoldenNotes[ThemeIndex]].Text;
+    if (CurrentSong <> nil) and CurrentSong.isDuet and (PlayersPlay <> 1) then
+      GoldTrack := (PlayerNumber - 1) mod 2
+    else
+      GoldTrack := 0;
+    if LongqSpotsTotal(GoldTrack) > 0 then
+      Text[TextGoldenNotes[ThemeIndex]].Text := Format('Bonus %d/%d',
+        [LongqSpotsHit(PlayerNumber - 1, GoldTrack), LongqSpotsTotal(GoldTrack)])
+    else
+      Text[TextGoldenNotes[ThemeIndex]].Text := LongqGoldenLabel[ThemeIndex];
 
     // line bonus
     Text[TextLineBonusScore[ThemeIndex]].Text           := IntToStr(TextPhrase_ActualValue[PlayerNumber]);
