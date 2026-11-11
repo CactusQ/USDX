@@ -1243,7 +1243,7 @@ begin
 
         end;
 
-      SDLK_TAB:
+      SDLK_TAB, SDLK_H: // longq: H = help too (operator 2026-11-11)
         begin
           Help.SetHelpID(ID);
           ScreenPopupHelp.ShowPopup();

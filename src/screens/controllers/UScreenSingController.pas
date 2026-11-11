@@ -539,6 +539,13 @@ begin
           ScreenSing.Settings.InputVisible        := (ScreenSing.Settings.NotesVisible[0]);
           ScreenSing.Settings.OscilloscopeVisible := (ScreenSing.Settings.NotesVisible[0]);
           Exit;
+        end
+        else if (SDL_ModState and (KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT + KMOD_RALT + KMOD_LSHIFT + KMOD_RSHIFT)) = 0 then
+        begin // longq: plain H = help popup, same as TAB (operator 2026-11-11)
+          ResumeAfterHelp := not Paused;
+          if ResumeAfterHelp then
+            Pause;
+          ScreenPopupHelp.ShowPopup(ResumeAfterHelp);
         end;
       end;
     end;

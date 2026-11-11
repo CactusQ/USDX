@@ -167,7 +167,7 @@ begin
           Visible := false;
         end;
 
-      SDLK_TAB:
+      SDLK_TAB, SDLK_H: // longq: H = help too (operator 2026-11-11)
         begin
           Help.SetHelpID(ID);
           ScreenPopupHelp.ShowPopup();
@@ -355,6 +355,12 @@ var
 begin
   Interaction := 0; // reset interaction
   SelectsS[0].Text.Text := Theme.SongMenu.SelectSlide1.Text; // longq: SM_Song relabels it "Lyrics"
+  // longq: theme puts SelectSlide1 on the Play row (Y 178); SM_Song moves it to its own row, reset here
+  SelectsS[0].SetY(Theme.SongMenu.SelectSlide1.Y);
+  Button[3].SetY(Theme.SongMenu.Button4.Y);
+  Button[4].SetY(Theme.SongMenu.Button5.Y);
+  if Length(Statics) > 0 then
+    Statics[0].Texture.H := Theme.SongMenu.Statics[0].H;
   Visible := true;  // set visible
   case sMenu of
     SM_Main:
@@ -412,6 +418,13 @@ begin
           // over the value ("LyHangul + reading", 2026-11-11 screenshot), so the row shows the version only
           SelectsS[0].Text.Text := '';
           UpdateSelectSlideOptions(0, ISelections1, SelectValue1);
+          // own row between "Add to playlist" and "Edit" so Up/Down follow the screen order (operator 2026-11-11:
+          // "5 items but skips the middle two": the row sat on top of Play while Down went Playlist -> Lyrics -> Edit)
+          SelectsS[0].SetY(Theme.SongMenu.Button4.Y);
+          Button[3].SetY(Theme.SongMenu.Button5.Y);
+          Button[4].SetY(Theme.SongMenu.Button5.Y + (Theme.SongMenu.Button5.Y - Theme.SongMenu.Button4.Y));
+          if Length(Statics) > 0 then
+            Statics[0].Texture.H := Theme.SongMenu.Statics[0].H + (Theme.SongMenu.Button5.Y - Theme.SongMenu.Button4.Y);
           Interaction := 3; // left/right picks, Enter sings
         end;
 
