@@ -373,6 +373,8 @@ const
     '    st += step(0.93, h) * smoothstep(0.3, 0.0, abs(fract(g.x) - 0.5)) * smoothstep(0.0, 0.5, fract(g.y)) * smoothstep(1.0, 0.6, fract(g.y)); }'#10 +
     '  col += vec3(0.9, 0.95, 1.0) * st * (0.4 + 1.2 * uHigh) * smoothstep(0.05, 0.4, r);'#10 +
     '  col += uPal[4] * exp(-r * 9.0) * (0.6 + uBass);'#10 +
+    // bright covers lit the lyric zone up to 128/255 (Smooth Criminal, 2026-11-11): darken like Y2K/Aero
+    '  col *= mix(0.6, 1.0, smoothstep(0.05, 0.38, uv.y));'#10 +
     '  return col;'#10 +
     '}'#10;
 
