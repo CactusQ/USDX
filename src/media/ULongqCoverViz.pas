@@ -100,6 +100,7 @@ type
     Template, PrevTemplate: integer;
     FadeStart: cardinal;
     Decided, Forced: boolean;
+    DecidedFull: boolean; // mood decided on the finished whole-song analysis
     Serious: boolean;
     Bpm: single;
     // smoothed audio state
@@ -639,8 +640,10 @@ var
   Fmt0: TAudioSampleFormat;
   Ok: boolean;
   I0: integer;
+  EmptyReads: integer;
 begin
   T0 := SDL_GetTicks;
+  EmptyReads := 0;
   Stream := nil;
   Ok := false;
   // same as the audio callback: decoded data may hold NaN/denormals, never raise on them
@@ -680,8 +683,17 @@ begin
     while not Terminated do
     begin
       Got := Stream.ReadData(@Buf[0], Length(Buf));
+      // an empty read is not the end: on a busy machine the decoder came back empty after 3-90 s of
+      // 200-320 s songs (2026-11-11 night run), which froze the visualizer for the rest of the song
       if Got <= 0 then
-        Break;
+      begin
+        if Stream.EOF or Stream.Error or (EmptyReads >= 2000) then
+          Break;
+        Inc(EmptyReads);
+        Sleep(2);
+        Continue;
+      end;
+      EmptyReads := 0;
       N := Got div (Ch * BPS);
       for I := 0 to N - 1 do
       begin
@@ -1037,15 +1049,20 @@ const
   FunSet: array[0..6] of integer = (0, 1, 2, 3, 4, 5, 7);
   SeriousSet: array[0..3] of integer = (0, 6, 8, 3);
 var
-  Score: single;
+  Score, MoodBpm: single;
   G: string;
   Old: integer;
 begin
   Decided := true;
+  DecidedFull := Ana.Done;
   Score := 0;
   // tuned 2026-11-10 on Hung Up (125 bpm, 6.1 onsets/s, fun) vs Because of You (70 bpm, 4.7/s, serious)
-  if Bpm >= 118 then Score := Score + 1
-  else if (Bpm > 0) and (Bpm < 92) then Score := Score - 1.5;
+  // chart BPM is a note-grid value, often 2x the felt tempo: No Woman No Cry 310 -> 155, Stickwitu 320 -> 160
+  // (both ~80) were scored fast (2026-11-11 night run). For the mood only, read > 150 as half time.
+  MoodBpm := Bpm;
+  if MoodBpm > 150 then MoodBpm := MoodBpm / 2;
+  if MoodBpm >= 118 then Score := Score + 1
+  else if (MoodBpm > 0) and (MoodBpm < 92) then Score := Score - 1.5;
   if Ana.Done and (Ana.Count > 100) then
   begin
     if Ana.OnsetRate > 5.5 then Score := Score + 1
@@ -1078,6 +1095,8 @@ begin
     PrevTemplate := Old;
     FadeStart := SDL_GetTicks;
   end;
+  Log.LogInfo(Format('cover viz: pick %s (score %.1f, mood bpm %.0f, onsets %.2f/s, %d rows, analysis done %s)',
+    [LCV_TEMPLATE_NAMES[Template], Score, MoodBpm, Ana.OnsetRate, Ana.Count, BoolToStr(Ana.Done, true)]), 'longq');
 end;
 
 { band table lookup at the playback position: plain array reads, nothing shared is locked }
@@ -1166,7 +1185,10 @@ begin
     Exit;
   T := AudioPlayback.Position;
   if not Decided and (Ana.Done or (T > 4)) then
-    DecideMood;
+    DecideMood
+  else if Decided and not DecidedFull and Ana.Done then
+    DecideMood; // first pick used a partial analysis (slow machine): settle it once, same seed
+
   UpdateAudio(T);
   DepthWas := Renderer.DepthTest;
   BlendWas := Renderer.Blend;
@@ -1327,7 +1349,9 @@ function TLcvVideo.GetLoop(): boolean; begin Result := false; end;
 { Ctrl+Tab ("next preset") lands here: crossfade to another template of the same mood }
 procedure TLcvVideo.SetPosition(Time: real);
 begin
-  if not Decided then
+  // seeks (keys 1-4, S, Left/Right) also set the video position: song seconds. Only Ctrl+Tab passes Now
+  // (a TDateTime, ~46000), so only that switches the template; a seek used to swap it every time
+  if not Decided or (Time < 10000) then
     Exit;
   Seed := Frac(Seed + 0.37 + Random * 0.3);
   Param[0] := Random; Param[1] := Random;
