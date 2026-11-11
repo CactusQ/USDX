@@ -241,7 +241,8 @@ uses
   Math,
   ULongqAutotest,
   ULongqCoverViz,
-  ULongqReadingLayout;
+  ULongqReadingLayout,
+  ULongqTranspose;
 
 const
   MAX_MESSAGE = 3;
@@ -597,6 +598,32 @@ begin
             SDLK_3: SeekTo(AudioPlayback.Position + 5.0);
             SDLK_4: SeekTo(AudioPlayback.Position + 15.0);
           end;
+      end;
+
+      // longq transpose (operator 2026-11-11): [ = key down, ] = key up, 1 semitone per press,
+      // -6..+6, remembered per song. Song audio is pitch-shifted (tempo kept), the notes move along.
+      SDLK_LEFTBRACKET, SDLK_RIGHTBRACKET:
+      begin
+        if (SDL_ModState = 0) and (ScreenSong.Mode <> smMedley) then
+        begin
+          if PressedKey = SDLK_LEFTBRACKET then
+            i1 := Max(-LONGQ_TRANSPOSE_MAX, LongqTransposeSemis - 1)
+          else
+            i1 := Min(LONGQ_TRANSPOSE_MAX, LongqTransposeSemis + 1);
+          if i1 <> LongqTransposeSemis then
+          begin
+            LongqTransposeNotes(CurrentSong, i1 - LongqTransposeSemis);
+            LongqTransposeSemis := i1;
+            LongqTransposeSave(CurrentSong, i1);
+          end;
+          if i1 = 0 then
+            screenSingViewRef.WriteMessage('Key: original')
+          else if i1 > 0 then
+            screenSingViewRef.WriteMessage('Key: +' + IntToStr(i1))
+          else
+            screenSingViewRef.WriteMessage('Key: ' + IntToStr(i1));
+        end;
+        Exit;
       end;
 
       // longq seek: Right/Left (or Ctrl+Right/Left) = +/- 5 s.
@@ -1092,9 +1119,22 @@ begin
 
   if (not success) then
   begin
+    LongqTransposeSemis := 0;
     SongError();
     Exit;
   end;
+
+  // longq transpose: the saved key of this song (the notes were just reloaded unshifted).
+  // Medley keeps the original key (one key per song would jump between medley parts).
+  if ScreenSong.Mode = smMedley then
+    LongqTransposeSemis := 0
+  else
+    LongqTransposeSemis := LongqTransposeLoad(CurrentSong);
+  // autotest: LONGQ_AUTOTEST_TRANSPOSE=<semis> forces a key for the run (not saved)
+  if AutotestActive and (GetEnvironmentVariable('LONGQ_AUTOTEST_TRANSPOSE') <> '') then
+    LongqTransposeSemis := EnsureRange(StrToIntDef(GetEnvironmentVariable('LONGQ_AUTOTEST_TRANSPOSE'), 0),
+      -LONGQ_TRANSPOSE_MAX, LONGQ_TRANSPOSE_MAX);
+  LongqTransposeNotes(CurrentSong, LongqTransposeSemis);
 
   if ScreenSong.Mode = smMedley then
   begin
@@ -1812,6 +1852,7 @@ end;
 
 procedure TScreenSingController.OnHide;
 begin
+  LongqTransposeSemis := 0; // menus and previews play in the original key
   // close video files
   fVideoClip := nil;
   fCurrentVideo := nil;

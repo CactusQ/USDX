@@ -323,6 +323,9 @@ type
       function Synchronize(BufferSize: integer; FormatInfo: TAudioFormatInfo): integer;
       procedure FillBufferWithFrame(Buffer: PByteArray; BufferSize: integer; Frame: PByteArray; FrameSize: integer);
     public
+      // longq transpose: true for the song streams (music + karaoke), they follow LongqTransposeSemis
+      LongqTransposable: boolean;
+
       constructor Create();
 
       (**
@@ -665,6 +668,8 @@ var
   LongqAudioLate: int64 = 0;        // callback took longer than the audio it delivered (= an underrun)
   LongqAudioMaxUs: int64 = 0;       // slowest callback, microseconds
   LongqAudioBudgetUs: int64 = 0;    // audio length per callback, microseconds
+  // longq transpose: semitones (-6..+6) for the song streams; set by the sing screen, 0 elsewhere
+  LongqTransposeSemis: integer = 0;
 
 procedure InitializeSound;
 procedure InitializeVideo;

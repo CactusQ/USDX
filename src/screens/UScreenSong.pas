@@ -3732,6 +3732,13 @@ begin
 
   AudioPlayback.Close();
 
+  // longq: preview volume Off = no menu audio at all (not a silent stream)
+  if Ini.PreviewVolume <= 0 then
+  begin
+    PreviewOpened := Interaction;
+    Exit;
+  end;
+
   if CatSongs.VisibleSongs = 0 then
     Exit;
 

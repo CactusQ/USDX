@@ -201,6 +201,7 @@ uses
   ULongqAutotest    in 'base\ULongqAutotest.pas',
   ULongqVersionKey  in 'base\ULongqVersionKey.pas',
   ULongqVersions    in 'base\ULongqVersions.pas',
+  ULongqTranspose   in 'base\ULongqTranspose.pas',
   ULongqReadingLayout in 'base\ULongqReadingLayout.pas',
   UEditorLyrics     in 'base\UEditorLyrics.pas',
   USkins            in 'base\USkins.pas',
@@ -274,6 +275,7 @@ uses
   // must be after UVideo, so it will not be the default video module
   UVisualizer               in 'media\UVisualizer.pas',
   ULongqCoverViz            in 'media\ULongqCoverViz.pas',
+  ULongqPitchShift          in 'media\ULongqPitchShift.pas',
 {$ENDIF}
 {$IFDEF UseBASSInput}
   UAudioInput_Bass          in 'media\UAudioInput_Bass.pas',

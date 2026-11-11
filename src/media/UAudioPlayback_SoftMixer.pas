@@ -39,7 +39,8 @@ uses
   SysUtils,
   URingBuffer,
   UMusic,
-  UAudioPlaybackBase;
+  UAudioPlaybackBase,
+  ULongqPitchShift;
 
 type
   TAudioPlayback_SoftMixer = class;
@@ -68,6 +69,11 @@ type
       FadeInStartVolume, FadeInTargetVolume: single;
 
       NeedsRewind: boolean;
+
+      // longq transpose (created on first use, audio thread)
+      Shifter: TLongqPitchShifter;
+      ShifterActive: boolean;   // true while the last ReadData shifted (position compensation)
+      ShifterFlush: boolean;    // set by FlushBuffers (any thread), the audio thread resets the shifter
 
       procedure Reset();
 
@@ -373,6 +379,9 @@ begin
   SourceBufferSize := 0;
   SourceBufferCount := 0;
 
+  FreeAndNil(Shifter);
+  ShifterActive := false;
+
   NeedsRewind := false;
 
   fVolume := 0;
@@ -562,6 +571,7 @@ end;
 
 procedure TGenericPlaybackStream.FlushBuffers();
 begin
+  ShifterFlush := true;
   SampleBufferCount := 0;
   SampleBufferPos := 0;
   SourceBufferCount := 0;
@@ -729,6 +739,22 @@ begin
         Exit;
       end;
 
+      // longq: transpose the freshly converted block (engine format, interleaved S16)
+      if LongqTransposable and (LongqTransposeSemis <> 0) and (OutputFormatInfo.Format = asfS16) and
+         (ConversionOutputCount > 0) then
+      begin
+        if not assigned(Shifter) then
+          Shifter := TLongqPitchShifter.Create(Round(OutputFormatInfo.SampleRate), OutputFormatInfo.Channels);
+        if ShifterFlush or not ShifterActive then
+          Shifter.Reset;
+        ShifterFlush := false;
+        Shifter.SetSemitones(LongqTransposeSemis);
+        Shifter.ProcessS16(PSmallInt(@SampleBuffer[SampleBufferCount]), ConversionOutputCount div OutputFrameSize);
+        ShifterActive := true;
+      end
+      else if (ConversionOutputCount > 0) then
+        ShifterActive := false;
+
       // adjust sample- and source-buffer count by the number of converted bytes
       SampleBufferCount := SampleBufferCount + ConversionOutputCount;
       SourceBufferCount := SourceBufferCount - ConversionInputCount;
@@ -884,6 +910,9 @@ begin
     // use the timestamp of the source as reference and subtract the time of
     // the data that is still buffered and not yet output.
     Result := SourceStream.Position - BufferedTime;
+    // longq: the transposer delays the audio by a fixed amount
+    if ShifterActive and assigned(Shifter) then
+      Result := Result - Shifter.LatencySec;
 
     UnlockSampleBuffer();
   end

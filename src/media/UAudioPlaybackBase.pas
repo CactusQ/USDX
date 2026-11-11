@@ -207,6 +207,7 @@ begin
   end;
   if (Ini.ReplayGain = 1) then
     MusicStream.ReplayGainEnabled := true;
+  MusicStream.LongqTransposable := true;
 
   if assigned(FilenameKaraoke) then
     KaraokeMusicStream := OpenStream(FilenameKaraoke);
@@ -215,6 +216,7 @@ begin
   begin
     if (Ini.ReplayGain = 1) then
       KaraokeMusicStream.ReplayGainEnabled := true;
+    KaraokeMusicStream.LongqTransposable := true;
   end;
 
   FOverallVolume := Ini.AudioVolume / 100;
