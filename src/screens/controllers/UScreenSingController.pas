@@ -1418,6 +1418,8 @@ var
 begin
   LongqGoldenPrepare(CurrentSong); // longq: golden pool weights (Track/Line.ScoreValue), spots, pops reset
   SetLength(SeekSnaps, 0);
+  for T := 0 to High(Player) do
+    Player[T].LongqSkipped := false; // longq: 10000 only without skipped notes
   for T := 0 to 1 do
   begin
     SeekSkippedValue[T] := 0;
@@ -1488,6 +1490,7 @@ begin
     begin
       if (not CurrentSong.isDuet) or (PlayerIndex mod 2 = T) or (PlayersPlay = 1) then
       begin
+        Player[PlayerIndex].LongqSkipped := Player[PlayerIndex].LongqSkipped or (SeekSkippedValue[T] > 0);
         Player[PlayerIndex].Score       := Player[PlayerIndex].Score * ScoreFactorNotes;
         Player[PlayerIndex].ScoreGolden := Player[PlayerIndex].ScoreGolden * ScoreFactorNotes;
         Player[PlayerIndex].ScoreLine   := Player[PlayerIndex].ScoreLine * ScoreFactorLines;
@@ -1584,6 +1587,13 @@ begin
       SeekLineSkipped[T] := Copy(SeekSnaps[K].LineSkipped[T], 0, Length(SeekSnaps[K].LineSkipped[T]));
     end;
     LongqGoldenRestore(SeekSnaps[K].Gold);
+    for i1 := 0 to High(Player) do // longq: skipped-notes cap follows the restored skip state
+    begin
+      T := Min(1, i1 mod 2);
+      if (not CurrentSong.isDuet) or (PlayersPlay = 1) then T := 0;
+      Player[i1].LongqSkipped := SeekSkippedValue[T] > 0;
+      Player[i1].Score := Player[i1].Score; // re-run UpdateIntScores
+    end;
     NewPosition := Max(0, GetTimeFromBeat(SeekSnaps[K].Beat) - 0.001);
     NewBeatD := BeatDAt(NewPosition);
     SetLength(SeekSnaps, K); // the line start re-records itself when it is reached again

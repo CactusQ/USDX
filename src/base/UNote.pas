@@ -41,6 +41,7 @@ uses
   UIni,
   ULog,
   ULongqGolden,
+  ULongqGoldenMath,
   ULyrics,
   UMusic,
   URecord,
@@ -77,6 +78,7 @@ type
     procedure UpdateIntScores;
 
   public
+    LongqSkipped:    boolean; // longq: notes were seek-skipped this run -> total capped (ULongqGoldenMath.LongqCapTotal)
     Name:           UTF8String;
     Level:          integer; // 0 - easy, 1 - medium, 2 - hard
     Track:          integer; // 0 - track 1, 1 - track 2 (duet)
@@ -197,7 +199,7 @@ end;
 procedure TPlayer.UpdateIntScores();
 begin
   // total score
-  _ScoreTotalInt := round(Score + ScoreGolden + ScoreLine);
+  _ScoreTotalInt := LongqCapTotal(Score + ScoreGolden + ScoreLine, LongqSkipped); // longq: was round()
   // components
   _ScoreInt := round(Score);
   _ScoreGoldenInt := round(ScoreGolden);
@@ -223,6 +225,9 @@ begin
     else
       _ScoreGoldenInt := _ScoreGoldenInt + 1;
   end;
+  // longq: the cap can take more than 1 point off the total; take the rest off the notes, then the line bonus
+  while (_ScoreInt + _ScoreGoldenInt + _ScoreLineInt > _ScoreTotalInt) and (_ScoreInt + _ScoreLineInt > 0) do
+    if _ScoreInt > 0 then Dec(_ScoreInt) else Dec(_ScoreLineInt);
 end;
 procedure TPlayer.ResetScores();
 begin

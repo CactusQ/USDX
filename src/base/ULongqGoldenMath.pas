@@ -17,17 +17,23 @@ interface
 {$ENDIF}
 
 const
-  LONGQ_GOLDEN_MODE   = 0;     // 0 = INSIDE (max 10000), 1 = ON TOP (max 11000); pending operator pick
-  LONGQ_GOLDEN_POOL   = 1000;  // points shared by all golden beats of a track
+  LONGQ_GOLDEN_MODE   = 0;     // 0 = INSIDE (max 10000, operator pick 2026-11-11 12:05), 1 = ON TOP (max 11000)
+  LONGQ_GOLDEN_POOL   = 500;   // points shared by all golden beats of a track (operator 2026-11-11 12:10: 5%)
   LONGQ_LINE_BONUS    = 1000;  // = MAX_SONG_LINE_BONUS
-  LONGQ_NORMAL_POOL_INSIDE = 8000;
+  LONGQ_NORMAL_POOL_INSIDE = 8500;
   LONGQ_NORMAL_POOL_ONTOP  = 9000;
   LONGQ_STOCK_NOTES   = 10000 - LONGQ_LINE_BONUS; // stock note points (golden = 2 normal beats)
+  LONGQ_MAX_TOTAL     = 10000;
+  LONGQ_SKIP_CAP      = 9990;  // a run with seek-skipped notes never shows 10000
 
 { per-beat integer weights so that NotesPool * W * beats / sum(W * beats) gives the pools:
   all normal beats share the normal pool, all golden beats share LONGQ_GOLDEN_POOL. No golden or no normal
   beats: stock weights 1 / 2 and 9000. }
 procedure LongqPoolWeights(NormalBeats, GoldenBeats: integer; out WNormal, WGolden, NotesPool: integer);
+
+{ shown total (operator 2026-11-11 12:15: 10000 only when every note and line is hit): rounding never lifts a
+  non-flawless raw total to 10000 (-> 9999); any seek-skipped notes cap the total at 9990. }
+function LongqCapTotal(Raw: real; Skipped: boolean): integer;
 
 implementation
 
@@ -56,6 +62,17 @@ begin
   WNormal := (NP div G) * GoldenBeats;
   WGolden := (LONGQ_GOLDEN_POOL div G) * NormalBeats;
   NotesPool := NP + LONGQ_GOLDEN_POOL;
+end;
+
+function LongqCapTotal(Raw: real; Skipped: boolean): integer;
+begin
+  Result := Round(Raw);
+  if (Result >= LONGQ_MAX_TOTAL) and (Raw < LONGQ_MAX_TOTAL - 0.01) then
+    Result := LONGQ_MAX_TOTAL - 1;
+  if Result > LONGQ_MAX_TOTAL then
+    Result := LONGQ_MAX_TOTAL;
+  if Skipped and (Result > LONGQ_SKIP_CAP) then
+    Result := LONGQ_SKIP_CAP;
 end;
 
 end.
