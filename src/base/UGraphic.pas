@@ -554,13 +554,18 @@ begin
   Renderer.Blend := true;
   Renderer.DepthTest := true;
   Renderer.SetOrthographicProjection(0, RenderW, RenderH, 0, -1, 100);
-  Renderer.VSync := true;
+  // longq: a never-shown LONGQ_HIDDEN window has no screen, so a vsync'd swap waits for a display refresh
+  // that never comes (hang at 'Loading Loading Screen', 2026-11-11); hidden test runs swap without vsync
+  Renderer.VSync := GetEnvironmentVariable('LONGQ_HIDDEN') = '';
 
   // Borderless fullscreen and windows were started with SDL_WINDOW_HIDDEN flag to avoid flickers during OpenGL
   // initialization, they need to be shown to the user after the OpenGL context is successfully created
   // longq: LONGQ_HIDDEN=1 keeps a windowed test run invisible (offscreen checks while someone plays)
-  if ((CurrentWindowMode = Mode_Borderless) or (CurrentWindowMode = Mode_Windowed)) and
-     ((GetEnvironmentVariable('LONGQ_HIDDEN') = '') or (CurrentWindowMode = Mode_Borderless)) then
+  // (a hidden windowed run must NOT fall through to the exclusive-fullscreen branch below: that put a
+  // window on screen on 2026-11-10 14:55 and hung SwapBuffers once the per-frame re-hide was added)
+  if (CurrentWindowMode = Mode_Windowed) and (GetEnvironmentVariable('LONGQ_HIDDEN') <> '') then
+    Log.LogStatus('longq: LONGQ_HIDDEN, window stays hidden', 'UGraphic.Initialize3D')
+  else if ((CurrentWindowMode = Mode_Borderless) or (CurrentWindowMode = Mode_Windowed)) then
   begin
     SDL_ShowWindow(screen);
     if (CurrentWindowMode = Mode_Borderless) then

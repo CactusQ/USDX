@@ -4,7 +4,8 @@
 #   LONGQ_HIDDEN=1 (window never shown), SDL_MAC_BACKGROUND_APP=1 (no Dock icon, no focus),
 #   SDL_AUDIODRIVER=dummy (nothing reaches the speakers, the Mac volume is not touched),
 #   throwaway data dir + log dir (USDX_DATA_NAME), scratch config/scores, songs symlinked read-only.
-# Env: RES (default 960x540), LONGQ_AUTOTEST_PLAYERS (2 = duet both tracks), APP, TIMEOUT (s, 240).
+# Env: RES (default 960x540), LONGQ_AUTOTEST_PLAYERS (2 = duet both tracks), APP, TIMEOUT (s, 240),
+#      NICE (default 15; 0 for night benches so other jobs do not starve the audio thread).
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${APP:-$REPO/UltraStar Deluxe.app}"
@@ -43,12 +44,12 @@ PY
   echo "== $(basename "$SONG_DIR")"
   LONGQ_HIDDEN=1 SDL_MAC_BACKGROUND_APP=1 SDL_AUDIODRIVER=dummy USDX_DATA_NAME="$NAME" \
   LONGQ_AUTOTEST=1 LONGQ_AUTOTEST_SONG="${LONGQ_AUTOTEST_SONG:-}" \
-    nice -n 15 "$APP/Contents/MacOS/ultrastardx" -window -resolution "${RES:-960x540}" \
+    nice -n "${NICE:-15}" "$APP/Contents/MacOS/ultrastardx" -window -resolution "${RES:-960x540}" \
     -songpath "$WORK/songs" -configfile "$WORK/config.ini" -scorefile "$WORK/scores.db" \
     > "$WORK/stdout.log" 2>&1 &
   PID=$!
   for _ in $(seq 1 "${TIMEOUT:-240}"); do kill -0 $PID 2>/dev/null || break; sleep 1; done
-  if kill -0 $PID 2>/dev/null; then echo "TIMEOUT, killing"; kill $PID; RC=124; else wait $PID; RC=$?; fi
+  if kill -0 $PID 2>/dev/null; then echo "TIMEOUT, killing"; kill $PID; sleep 2; kill -9 $PID 2>/dev/null; RC=124; else wait $PID; RC=$?; fi
   { [ -s "$LOGD/Error.log" ] && cat "$LOGD/Error.log" || cat "$WORK/stdout.log"; } 2>/dev/null | grep -a 'AUTOTEST\|cover viz' | sed 's/^.*AUTOTEST /  /'
   echo "  exit=$RC"
   [ "$RC" = 0 ] || RC_ALL=$RC
