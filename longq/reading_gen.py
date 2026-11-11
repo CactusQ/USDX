@@ -260,7 +260,10 @@ INLINE_RUBY = re.compile(r"([一-鿿々〆ヶ]+)[(（]([぀-ヿー]+)[)）]")
 
 
 def generate(chart_path, rom, rom_sha, kanji_source="auto"):
-    raw = Path(chart_path).read_text(encoding="utf-8-sig")
+    try:
+        raw = Path(chart_path).read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        return None, None   # legacy cp1252/latin-1 chart: no CJK possible
     lines = raw.splitlines()
     # kanji chart with inline ruby, e.g. "彼女(かのじょ)": ruby from the chart itself, romaji from its kana
     lang0 = next((l[10:].strip() for l in lines if l.startswith("#LANGUAGE:")), "").lower()
@@ -347,6 +350,9 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--stdout", action="store_true")
     ap.add_argument("--force", action="store_true", help="overwrite an existing .reading")
+    ap.add_argument("--refresh", action="store_true",
+                    help="write missing readings and rewrite STALE ones (their #CHARTMD5 no longer matches the chart); "
+                         "a reading whose #CHARTMD5 matches is left alone; quiet except for writes")
     ap.add_argument("--romanizer", default=str(DEFAULT_ROMANIZER))
     ap.add_argument("--kanji-source", default="auto",
                     help="lrclib_orig.json with the kanji lyrics, 'auto' (find in the chart pipeline) or 'none'")
@@ -356,13 +362,29 @@ def main():
     if not charts:
         ap.error("no charts")
     rc = 0
+    counts = {"wrote": 0, "current": 0, "no_cjk": 0}
     for c in charts:
+        if a.refresh:
+            try:
+                b = Path(c).read_bytes()
+            except OSError:
+                continue
+            if not CJK.search(b.decode("utf-8", "ignore")):
+                counts["no_cjk"] += 1; continue
+            out = Path(a.out) if a.out else Path(c).with_suffix(".reading")
+            if out.exists():
+                m = re.search(r"#CHARTMD5:(\w+)", out.read_text(encoding="utf-8", errors="ignore"))
+                if m and m[1].lower() == hashlib.md5(b).hexdigest():
+                    counts["current"] += 1; continue
+            a.force = True
         try:
             text, stats = generate(c, rom, sha, a.kanji_source)
         except Exception as e:  # noqa: BLE001
             print(f"ERROR {c}: {e}", file=sys.stderr); rc = 1; continue
         if text is None:
-            print(f"skip (no CJK) {c}"); continue
+            if not a.refresh:
+                print(f"skip (no CJK) {c}")
+            continue
         if a.stdout:
             sys.stdout.write(text); continue
         out = Path(a.out) if a.out else Path(c).with_suffix(".reading")
@@ -372,7 +394,10 @@ def main():
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, out)   # new inode: never writes through a hardlink shared with another chart
         n = int(re.search(r"#NOTES:(\d+)", text)[1])
+        counts["wrote"] += 1
         print(f"wrote {out}  ({n} notes{', furigana ' + json.dumps(stats) if stats else ''})")
+    if a.refresh:
+        print(f"refresh: {counts}")
     return rc
 
 
