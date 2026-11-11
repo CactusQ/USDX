@@ -256,7 +256,8 @@ const
     '  vec3 col = max(scene(uv, p), 0.0);'#10 +
     // beat glow: exposure breathes on the kick/808, the snare adds a soft accent wash; both scale with the
     // drive. Bounded so one hit moves the frame mean by < 0.1 relative luminance (no strobe, WCAG 2.3.1)
-    '  col *= 1.0 + (0.04 + 0.10 * uDrive) * uKick;'#10 +
+    // (bright pixels get less: in linear light a x1.14 on a bright frame is a 0.1 jump)
+    '  col *= 1.0 + (0.04 + 0.10 * uDrive) * uKick * (1.0 - smoothstep(0.25, 0.7, dot(col, vec3(0.299, 0.587, 0.114))));'#10 +
     '  col += uPal[3] * uSnare * (0.01 + 0.05 * uDrive);'#10 +
     // brightness floor: shadows lift toward the deep palette tone, a dark cover never makes a black scene
     '  float l = dot(col, vec3(0.299, 0.587, 0.114));'#10 +
@@ -411,10 +412,13 @@ const
     'vec3 scene(vec2 uv, vec2 p){'#10 +
     '  float r = length(p) + 1e-3; float a = atan(p.y, p.x);'#10 +
     '  float sp = mix(1.0, 0.45, uCalm);'#10 +
-    '  float z = 0.25 / r + uTime * (0.2 + 0.2 * uEnergy + 0.2 * uDrive) * sp + uKick * (0.004 + 0.012 * uDrive);'#10 +
+    '  float z = 0.25 / r + uTime * (0.18 + 0.12 * uEnergy + 0.15 * uDrive) * sp + uKick * (0.003 + 0.006 * uDrive);'#10 +
     '  vec2 t = vec2(a / (2.0 * PI) * 3.0 + uTime * 0.02, z);'#10 +
+    // each of the 3 wall strips runs a third of a tile out of phase: in sync, the whole frame pulsed
+    // bright/dark as the tiles scrolled (8 flashes/s on Stronger drops, 2026-11-11 flash test)
+    '  t.y += floor(t.x) * 0.333;'#10 +
     '  vec2 c = abs(fract(t) - 0.5) * 2.0 - 0.5;'#10 +
-    '  vec3 wall = uHasCover > 0.5 ? cover(c * 0.95, 1.0) : pal(t.y * 0.3 + fbm(t * 4.0));'#10 +
+    '  vec3 wall = uHasCover > 0.5 ? cover(c * 0.95, 2.0) : pal(t.y * 0.3 + fbm(t * 4.0));'#10 +
     '  wall = mix(grade(wall), wall, 0.4) * (0.8 + 0.4 * uBass);'#10 +
     '  float ring = smoothstep(0.44, 0.5, abs(fract(z * 2.0) - 0.5));'#10 +
     '  wall += uPal[3] * ring * (0.3 + (0.2 + 0.4 * uDrive) * uKick);'#10 +
