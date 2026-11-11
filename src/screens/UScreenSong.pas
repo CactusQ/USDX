@@ -3723,6 +3723,7 @@ var
   Song: TSong;
   PreviewPos: real;
   PreviewVolume: single;
+  KaraokePath: IPath;
 begin
   if SongIndex <> -1 then
   begin
@@ -3751,7 +3752,11 @@ begin
     Exit;
 
   PlayMidi := false;
-  if AudioPlayback.Open(Song.Path.Append(Song.Audio),nil) then
+  // longq: vocals volume in the preview too: open the #INSTRUMENTAL stem with the mix (crossfaded by Ini.VocalsVolume)
+  KaraokePath := nil;
+  if Assigned(Song.Karaoke) and (Song.Karaoke <> PATH_NONE) then
+    KaraokePath := Song.Path.Append(Song.Karaoke);
+  if AudioPlayback.Open(Song.Path.Append(Song.Audio), KaraokePath) then
   begin
     PreviewOpened := Interaction;
 
