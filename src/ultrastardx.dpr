@@ -199,6 +199,8 @@ uses
   UImage            in 'base\UImage.pas',
   ULyrics           in 'base\ULyrics.pas',
   ULongqAutotest    in 'base\ULongqAutotest.pas',
+  ULongqGoldenMath  in 'base\ULongqGoldenMath.pas',
+  ULongqGolden      in 'base\ULongqGolden.pas',
   ULongqVersionKey  in 'base\ULongqVersionKey.pas',
   ULongqVersions    in 'base\ULongqVersions.pas',
   ULongqTranspose   in 'base\ULongqTranspose.pas',

@@ -40,6 +40,7 @@ uses
   UGraphicClasses,
   UHookableEvent,
   UIni,
+  ULongqGolden,
   ULyrics,
   UMenu,
   UMusic,
@@ -100,6 +101,7 @@ type
       Score, ScoreLine, ScoreGolden, ScoreLast: array of real;
       SkipValue, SkipLines: array [0..1] of integer;
       LineSkipped: array [0..1] of array of boolean;
+      Gold: TLongqGoldSnap; // longq: bonus spots hit so far
     end;
     procedure SeekSnapshot(Beat: integer);
     procedure SeekTo(NewPosition: real);
@@ -1414,6 +1416,7 @@ procedure TScreenSingController.SeekResetSkips();
 var
   T: integer;
 begin
+  LongqGoldenPrepare(CurrentSong); // longq: golden pool weights (Track/Line.ScoreValue), spots, pops reset
   SetLength(SeekSnaps, 0);
   for T := 0 to 1 do
   begin
@@ -1463,7 +1466,7 @@ begin
           Continue;
         Overlap := Min(Frag.StartBeat + Frag.Duration, ToBeat) - Max(Frag.StartBeat, FromBeat);
         if Overlap > 0 then
-          Inc(LineValue, Overlap * ScoreFactor[Frag.NoteType]);
+          Inc(LineValue, Overlap * LongqNoteWeight(T, Frag.NoteType));
       end;
       if LineValue > 0 then
       begin
@@ -1489,7 +1492,7 @@ begin
         Player[PlayerIndex].ScoreGolden := Player[PlayerIndex].ScoreGolden * ScoreFactorNotes;
         Player[PlayerIndex].ScoreLine   := Player[PlayerIndex].ScoreLine * ScoreFactorLines;
         // the next line's perfection starts counting from here
-        Player[PlayerIndex].ScoreLast   := Player[PlayerIndex].Score + Player[PlayerIndex].ScoreGolden;
+        Player[PlayerIndex].ScoreLast   := LongqLineBase(PlayerIndex, T, Player[PlayerIndex].Score, Player[PlayerIndex].ScoreGolden);
       end;
     end;
   end;
@@ -1521,6 +1524,7 @@ begin
       SkipValue[T] := SeekSkippedValue[T]; SkipLines[T] := SeekSkippedLines[T];
       LineSkipped[T] := Copy(SeekLineSkipped[T], 0, Length(SeekLineSkipped[T]));
     end;
+    Gold := LongqGoldenSave;
   end;
   SeekSnaps[K].Beat := Beat;
 end;
@@ -1579,6 +1583,7 @@ begin
       SeekSkippedLines[T] := SeekSnaps[K].SkipLines[T];
       SeekLineSkipped[T] := Copy(SeekSnaps[K].LineSkipped[T], 0, Length(SeekSnaps[K].LineSkipped[T]));
     end;
+    LongqGoldenRestore(SeekSnaps[K].Gold);
     NewPosition := Max(0, GetTimeFromBeat(SeekSnaps[K].Beat) - 0.001);
     NewBeatD := BeatDAt(NewPosition);
     SetLength(SeekSnaps, K); // the line start re-records itself when it is reached again
@@ -2224,17 +2229,18 @@ begin
     Exit;
 
   // set max song score
-  MaxSongScore := MAX_SONG_SCORE - MAX_SONG_LINE_BONUS;
+  MaxSongScore := LongqNotesPool(Track); // longq: golden pool aware (stock 9000)
 
   // Note: ScoreValue is the sum of all note values of the song
-  MaxLineScore := MaxSongScore * (Line.ScoreValue / SeekScoreValue(Track));
+  // longq: with the golden pool, line perfection counts normal notes only (a missed bonus costs its own points)
+  MaxLineScore := MaxSongScore * (LongqLineBonusValue(Track, SentenceIndex) / SeekScoreValue(Track));
 
   for PlayerIndex := 0 to High(Player) do
   begin
     if (not CurrentSong.isDuet) or (PlayerIndex mod 2 = Track) or (PlayersPlay = 1)then
     begin
       CurrentPlayer := @Player[PlayerIndex];
-      CurrentScore  := CurrentPlayer.Score + CurrentPlayer.ScoreGolden;
+      CurrentScore  := LongqLineBase(PlayerIndex, Track, CurrentPlayer.Score, CurrentPlayer.ScoreGolden);
 
       // line bonus
 
@@ -2299,6 +2305,9 @@ begin
           Score[PlayerIndex] := Player[PlayerIndex].Score; ScoreLine[PlayerIndex] := Player[PlayerIndex].ScoreLine;
           ScoreGolden[PlayerIndex] := Player[PlayerIndex].ScoreGolden; ScoreLast[PlayerIndex] := Player[PlayerIndex].ScoreLast;
         end;
+  if (Length(SeekSnaps) > 0) and (Integer(SentenceIndex) < CurrentSong.Tracks[Track].High)
+    and (SeekSnaps[High(SeekSnaps)].Beat = CurrentSong.Tracks[Track].Lines[SentenceIndex + 1].StartBeat) then
+    SeekSnaps[High(SeekSnaps)].Gold := LongqGoldenSave;
 end;
 
  // Called on sentence change
