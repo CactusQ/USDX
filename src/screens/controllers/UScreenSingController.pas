@@ -1541,7 +1541,7 @@ end;
 procedure TScreenSingController.ClearLyricEngines();
 var
   ReadingMode, G: integer;
-  Furigana, Grow: boolean;
+  Furigana, Grow, Double: boolean;
 begin
   Lyrics.Clear(CurrentSong.BPM);
   LyricsDuetP1.Clear(CurrentSong.BPM);
@@ -1555,6 +1555,14 @@ begin
     ReadingMode := 1
   else if CurrentSong.HasReading then
     ReadingMode := Ini.ReadingLine;
+  // longq: furigana + Reading line Below = kana ruby above the kanji and romaji under the lyric
+  Double := Furigana and (Ini.ReadingLine = 2);
+  Lyrics.DoubleLine := Double;
+  LyricsDuetP1.DoubleLine := Double;
+  LyricsDuetP2.DoubleLine := Double;
+  Lyrics.ReadingDim := Ini.ReadingDim = 1;
+  LyricsDuetP1.ReadingDim := Ini.ReadingDim = 1;
+  LyricsDuetP2.ReadingDim := Ini.ReadingDim = 1;
   Lyrics.ReadingMode := ReadingMode;
   Lyrics.FuriganaMode := Furigana;
   Lyrics.ReadingScale := IReadingSizeVals[Ini.ReadingSize];
@@ -1573,9 +1581,15 @@ begin
   // the theme leaves free above the bar (~32 units) only for what is left over
   // operator 2026-11-09: lyric bar and note lanes stay at the stock geometry; annotations use
   // the free space above the current line instead of growing the bar
-  Grow := false;
+  // operator 2026-11-10 18:45: "same font size just more spaces for lyrics at bottom" -> Reading space = Grow
+  // (default) gives the annotation row(s) their own room; Overlay keeps the 2026-11-09 stock geometry
+  Grow := (ReadingMode <> 0) and (Ini.ReadingSpace = 1);
   if Grow then
-    G := Round(Theme.LyricBar.UpperH * 0.9 * IReadingSizeVals[Ini.ReadingSize] * IfThen(Furigana, RUBY_KANA_COMP, 1)) + 2
+  begin
+    G := Round(Theme.LyricBar.UpperH * 0.9 * IReadingSizeVals[Ini.ReadingSize] * IfThen(Furigana, RUBY_KANA_COMP, 1)) + 2;
+    if Double then
+      G := 2 * G;
+  end
   else
     G := 0;
   Lyrics.UpperLineH := Theme.LyricBar.UpperH + G;

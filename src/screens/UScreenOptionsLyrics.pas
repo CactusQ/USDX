@@ -102,6 +102,8 @@ type
     iReadingSlide,  // longq
     iFuriganaSlide, // longq
     iReadingSizeSlide, // longq
+    iReadingDimSlide, // longq
+    iReadingSpaceSlide, // longq
     iVersionsSlide, // longq
     iBackButton
   );
@@ -352,6 +354,8 @@ begin
   AddSelectSlide('SING_OPTIONS_LYRICS_READING', Ini.ReadingLine, IReadingLineTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_FURIGANA', Ini.Furigana, IFuriganaTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_READING_SIZE', Ini.ReadingSize, IReadingSize);
+  AddSelectSlide('SING_OPTIONS_LYRICS_READING_DIM', Ini.ReadingDim, IFuriganaTranslated); // longq: Off/On
+  AddSelectSlide('SING_OPTIONS_LYRICS_READING_SPACE', Ini.ReadingSpace, IReadingSpace);
   AddSelectSlide('SING_OPTIONS_LYRICS_VERSIONS', Ini.LyricVersions, IFuriganaTranslated); // longq: Off/On
 end;
 

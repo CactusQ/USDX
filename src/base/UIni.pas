@@ -207,6 +207,8 @@ type
       ReadingLine:    integer; // longq: 0 off, 1 above, 2 below
       Furigana:       integer; // longq: 0 kana only, 1 kanji with kana ruby (when the reading file has it)
       ReadingSize:    integer; // longq: index into IReadingSize (annotation size vs lyric)
+      ReadingDim:     integer; // longq: 1 = annotations greyed + semi-transparent (lyric stays the spotlight)
+      ReadingSpace:   integer; // longq: 0 = annotations overlay the stock lyric bar, 1 = the bar grows to fit them
       LyricVersions:  integer; // longq: 1 = sibling charts (romaji/kanji/duet/fixed) share one song-list entry
 
       // Themes
@@ -433,8 +435,10 @@ const
   IFurigana:      array[0..1] of UTF8String = ('Off', 'On');
   ILyricVersions: array[0..1] of UTF8String = ('Off', 'On');
   ICoverArtViz:   array[0..2] of UTF8String = ('Off', 'Auto', 'Always');
-  IReadingSize:   array[0..5] of UTF8String = ('50%', '60%', '70%', '80%', '90%', '100%');
-  IReadingSizeVals: array[0..5] of real = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0);
+  IReadingSize:   array[0..6] of UTF8String = ('50%', '60%', '70%', '80%', '85%', '90%', '100%');
+  IReadingSizeVals: array[0..6] of real = (0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 1.0);
+  IReadingDim:    array[0..1] of UTF8String = ('Off', 'On');
+  IReadingSpace:  array[0..1] of UTF8String = ('Overlay', 'Grow');
 
   // for lyric colors
   ILine:             array[0..2] of UTF8String = ('Sing', 'Actual', 'Next');
@@ -1687,7 +1691,9 @@ begin
   // longq: reading line (romaji/kanji) from <chart>.reading, default above
   ReadingLine := ReadArrayIndex(IReadingLine, IniFile, 'Lyrics', 'ReadingLine', 1);
   Furigana := ReadArrayIndex(IFurigana, IniFile, 'Lyrics', 'Furigana', 1);
-  ReadingSize := ReadArrayIndex(IReadingSize, IniFile, 'Lyrics', 'ReadingSize', 3);
+  ReadingSize := ReadArrayIndex(IReadingSize, IniFile, 'Lyrics', 'ReadingSize', 4);
+  ReadingDim := ReadArrayIndex(IReadingDim, IniFile, 'Lyrics', 'ReadingDim', 1);
+  ReadingSpace := ReadArrayIndex(IReadingSpace, IniFile, 'Lyrics', 'ReadingSpace', 1);
   LyricVersions := ReadArrayIndex(ILyricVersions, IniFile, 'Lyrics', 'LyricVersions', 1);
 
   // DefaultEncoding
@@ -2025,6 +2031,8 @@ begin
     IniFile.WriteString('Lyrics', 'ReadingLine', IReadingLine[ReadingLine]);
     IniFile.WriteString('Lyrics', 'Furigana', IFurigana[Furigana]);
     IniFile.WriteString('Lyrics', 'ReadingSize', IReadingSize[ReadingSize]);
+    IniFile.WriteString('Lyrics', 'ReadingDim', IReadingDim[ReadingDim]);
+    IniFile.WriteString('Lyrics', 'ReadingSpace', IReadingSpace[ReadingSpace]);
     IniFile.WriteString('Lyrics', 'LyricVersions', ILyricVersions[LyricVersions]);
 
     //Encoding default
