@@ -109,6 +109,7 @@ uses
   USongs,
   ULongqVersions,
   Math,
+  UText,
   UUnicodeUtils;
 
 function TScreenSongMenu.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
@@ -348,15 +349,38 @@ begin
      Button[0].Text[0].Text := Language.Translate('SONG_MENU_CLOSE_CATEGORY');
 end;
 
+{ longq: largest font size <= MaxSize (>= MinSize) at which every label is at most MaxW wide }
+function LongqFitTextSize(const Labels: array of UTF8String; MaxSize: integer; MaxW: real; MinSize: integer): integer;
+var
+  I: integer;
+  W: real;
+begin
+  SetFontFamily(0);
+  SetFontStyle(ftRegular);
+  SetFontItalic(false);
+  SetFontSize(MaxSize);
+  W := 0;
+  for I := 0 to High(Labels) do
+    W := Max(W, TextWidth(Labels[I]));
+  Result := MaxSize;
+  if W > MaxW then
+    Result := Max(MinSize, Trunc(MaxSize * MaxW / W));
+  if Result < MaxSize then
+    Log.LogStatus(Format('lyrics row: widest label %.1f at size %d, box %.1f -> size %d',
+      [W, MaxSize, MaxW, Result]), 'LongqFitTextSize');
+end;
+
 procedure TScreenSongMenu.MenuShow(sMenu: byte);
 var
   I, MSongs: integer;
   LyricSong: TSong;
+  Labels: TLongqLabels;
 begin
   Interaction := 0; // reset interaction
   SelectsS[0].Text.Text := Theme.SongMenu.SelectSlide1.Text; // longq: SM_Song relabels it "Lyrics"
   // longq: theme puts SelectSlide1 on the Play row (Y 178); SM_Song moves it to its own row, reset here
   SelectsS[0].SetY(Theme.SongMenu.SelectSlide1.Y);
+  SelectsS[0].Text.Size := Theme.SongMenu.SelectSlide1.TextSize; // longq: SM_Song may shrink it to fit
   Button[3].SetY(Theme.SongMenu.Button4.Y);
   Button[4].SetY(Theme.SongMenu.Button5.Y);
   if Length(Statics) > 0 then
@@ -410,10 +434,16 @@ begin
         if SelectsS[0].Visible then
         begin
           LyricSong := CatSongs.Song[ScreenSong.Interaction];
-          SetLength(ISelections1, Length(LyricSong.VersionGroup));
-          for I := 0 to High(LyricSong.VersionGroup) do
-            ISelections1[I] := LyricSong.VersionGroup[I].VersionLabel;
+          // short labels (operator 2026-11-11): CJK "KR + ROMAJI" / "KR", others "ORIGINAL" / "AI" ...
+          Labels := LongqVersionLabels(LyricSong);
+          SetLength(ISelections1, Length(Labels));
+          for I := 0 to High(Labels) do
+            ISelections1[I] := Labels[I];
           SelectValue1 := Max(0, LongqVersionIndex(LyricSong));
+          // value box = one menu button (SBGW 220) minus the arrows: shrink the font until the widest
+          // label fits instead of cutting it to "Hangeul + re.." (operator 2026-11-11 "never overflow")
+          SelectsS[0].Text.Size := LongqFitTextSize(ISelections1, Theme.SongMenu.SelectSlide1.TextSize,
+            Theme.SongMenu.SelectSlide1.SBGW - 2 * 24 - 4, 14);
           // the theme gives this slide no label room (SongMenuSelectSlide1 W = 0): a "Lyrics" label was drawn
           // over the value ("LyHangul + reading", 2026-11-11 screenshot), so the row shows the version only
           SelectsS[0].Text.Text := '';

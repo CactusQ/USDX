@@ -42,6 +42,10 @@ function LVOrderKey(const ALabel: UTF8String): UTF8String;
 function LVGroup(const Infos: TLVInfoArray): TIntArray;
 { 0/1/2 from a <chart>.reading header (#READING:n); 0 if missing. }
 function LVReadingKind(const ReadingPath: string): integer;
+{ 'KR' / 'JP' / 'CN' from a <chart>.reading header (#LANGUAGE:), '' if missing or other. }
+function LVReadingLang(const ReadingPath: string): string;
+{ 'KR' / 'JP' / 'CN' for a #LANGUAGE value, '' for other languages. }
+function LVLangCode(const Language: string): string;
 
 implementation
 
@@ -378,6 +382,56 @@ begin
     end;
   except
     Result := 0;
+  end;
+end;
+
+function LVLangCode(const Language: string): string;
+var
+  L: string;
+begin
+  L := LowerCase(Trim(Language));
+  if (Pos('korea', L) > 0) or (L = 'ko') or (L = 'kr') then
+    Result := 'KR'
+  else if (Pos('japan', L) > 0) or (L = 'ja') or (L = 'jp') then
+    Result := 'JP'
+  else if (Pos('chinese', L) > 0) or (Pos('mandarin', L) > 0) or (Pos('cantonese', L) > 0) or (L = 'zh') or (L = 'cn') then
+    Result := 'CN'
+  else
+    Result := '';
+end;
+
+function LVReadingLang(const ReadingPath: string): string;
+var
+  F: TextFile;
+  Line: string;
+  N: integer;
+begin
+  Result := '';
+  if not FileExists(ReadingPath) then
+    Exit;
+  AssignFile(F, ReadingPath);
+  try
+    Reset(F);
+    try
+      N := 0;
+      while (not EOF(F)) and (N < 12) do
+      begin
+        ReadLn(F, Line);
+        Inc(N);
+        Line := Trim(Line);
+        if (Length(Line) > 0) and (Line[1] = #$EF) then // BOM
+          Delete(Line, 1, 3);
+        if UpperCase(Copy(Line, 1, 10)) = '#LANGUAGE:' then
+        begin
+          Result := LVLangCode(Copy(Line, 11, MaxInt));
+          Break;
+        end;
+      end;
+    finally
+      CloseFile(F);
+    end;
+  except
+    Result := '';
   end;
 end;
 

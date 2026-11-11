@@ -146,6 +146,11 @@ type
     VersionHidden: boolean;          // a sibling is the group's current entry; not in CatSongs.Song
     VersionChosen: boolean;          // last version picked by the player (kept across refreshes)
     VersionReadingKind: integer;     // cache of the .reading kind + 1; 0 = not read yet
+    // longq: CJK chart in original script with a romaji line: the picker offers "+ ROMAJI" / original
+    // only (operator 2026-11-11), other charts of the song are folded away
+    ReadingChoice: boolean;
+    ReadingOff: boolean;             // player picked the original script without the romaji line
+    ReadingLang: UTF8String;         // 'KR' / 'JP' / 'CN' from the .reading header
   public
     Path:         IPath; // kust path component of file (only set if file was found)
     Folder:       UTF8String; // for sorting by folder (only set if file was found)

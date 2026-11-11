@@ -256,6 +256,66 @@ def chart_kanji(lines):
     return res
 
 
+RUBY_MARK = re.compile(r"\{([^|}]*)\|[^}]*\}")
+PARTICLES = {"は": ("ha", "wa"), "へ": ("he", "e")}
+
+
+def ja_word_spacing(lines, order, toks, surf_lines=None):
+    """Japanese charts have no spaces between notes, so the romaji line read as one blob ("fumikomuzeakuseru").
+    Tokenize each sung line (macOS word tokenizer, ja_tokens.py) and give the first note of every word a
+    leading space ("fumikomu ze akuseru kakehiki wa nai sa", operator 2026-11-11 "word-spaced romaji");
+    the particles は/へ read wa/e. Tokens that already start with a space are kept."""
+    pos = {i: k for k, (i, _) in enumerate(order)}
+    groups, cur = [], []
+    for i, l in enumerate(lines):
+        if NOTE.match(l):
+            cur.append(i)
+        elif l[:1] in ("-", "E", "P") or l.strip() in ("P1", "P2"):
+            if cur:
+                groups.append(cur)
+            cur = []
+    if cur:
+        groups.append(cur)
+    def text_of(i):
+        t = surf_lines.get(i) if surf_lines and i in surf_lines else None
+        if t is None:
+            p = lines[i].split(" ", 4)
+            t = p[4] if len(p) > 4 else ""
+        t = RUBY_MARK.sub(r"\1", INLINE_RUBY.sub(r"\1", t))
+        return "".join(ch for ch in t if not (ch.isspace() or ch == "~"))
+    gtexts = ["".join(text_of(i) for i in g) for g in groups]
+    if not any(JA.search(t) for t in gtexts):
+        return toks
+    try:
+        out = subprocess.run(["/usr/bin/python3", str(HERE / "ja_tokens.py")], input=json.dumps(gtexts),
+                             capture_output=True, text=True, check=True).stdout
+        words = json.loads(out)
+    except Exception:  # noqa: BLE001  (no pyobjc: keep the per-note tokens)
+        return toks
+    toks = list(toks)
+    for g, pieces in zip(groups, words):
+        starts, off, single = set(), 0, {}
+        for surf, _ in pieces:
+            if surf.strip():
+                starts.add(off)
+                single[off] = surf
+            off += len(surf)
+        off = 0
+        for n, i in enumerate(g):
+            t = text_of(i)
+            k = pos.get(i)
+            if k is not None and t:
+                tok = toks[k]
+                if n > 0 and off in starts and tok and not tok.startswith(" ") and tok.strip() not in ("~", "-"):
+                    tok = " " + tok
+                pr = PARTICLES.get(single.get(off, ""))
+                if pr and t == single[off] and tok.strip() == pr[0]:
+                    tok = tok.replace(pr[0], pr[1])
+                toks[k] = tok
+            off += len(t)
+    return toks
+
+
 INLINE_RUBY = re.compile(r"([一-鿿々〆ヶ]+)[(（]([぀-ヿー]+)[)）]")
 
 
@@ -307,6 +367,8 @@ def generate(chart_path, rom, rom_sha, kanji_source="auto"):
         p = clines[i].split(" ", 4)
         t = p[4] if len(p) > 4 else ""
         toks.append(t.replace("\r", "").replace("\n", "").replace("\t", " "))
+    if is_ja:
+        toks = ja_word_spacing(lines, order, toks, surf_lines if mode else None)
     src = None
     if mode:
         head = ["#READING:2", "#MODE:furigana+romaji", f"#LANGUAGE:{lang}", f"#SOURCE:{Path(chart_path).name}",

@@ -108,6 +108,7 @@ type
       // Some helper procedures for lyric drawing
       procedure DrawLyrics (Beat: real);
       procedure UpdateLineMetrics(LyricLine: TLyricLine) overload;
+      procedure LayoutReadingRow(LyricLine: TLyricLine; RequestWidth, RequestHeight: real);
       procedure DrawLyricsWords(LyricLine: TLyricLine; X, Y: real; StartWord, EndWord: integer);
       procedure DrawLyricsLine(X, W, Y, H: real; Line: TLyricLine; Beat: real);
       procedure DrawBall(XBall, YBall, Alpha: real);
@@ -126,6 +127,9 @@ type
       DoubleLine:     boolean;
       // longq: annotations greyed + semi-transparent so the lyric stays the spotlight (Ini.ReadingDim)
       ReadingDim:     boolean;
+      // longq: top of the reading row relative to the upper slot's Y (ULongqReadingLayout stack);
+      // 0 = legacy placement next to the lyric
+      ReadOffset:     real;
       // positions, line specific settings
       UpperLineX:     real;       // X start-pos of UpperLine
       UpperLineW:     real;       // Width of UpperLine with icon(s) and text
@@ -247,6 +251,7 @@ begin
   ReadingDim := true;
   ReadingScale := 0.85;
   BaseLineH := 0;
+  ReadOffset := 0;
 
   UpperLine := TLyricLine.Create;
   LowerLine := TLyricLine.Create;
@@ -371,7 +376,9 @@ begin
     begin
       // longq furigana: a note with empty display text continues the previous kanji word,
       // so the word (and its slide highlight) spans all notes of its reading
-      if FuriganaMode and Line.Notes[NoteIndex].HasSurface and
+      // (also without furigana: the chart text of v2 songs carries inline "kanji(kana)" ruby, the
+      // surface is the clean kanji display, operator 2026-11-11 "always the original script")
+      if Line.Notes[NoteIndex].HasSurface and
          (Line.Notes[NoteIndex].Surface = '') and (W >= 0) then
       begin
         with LyricLine.Words[W] do
@@ -390,7 +397,7 @@ begin
       LyricLine.Words[W].RubyPre   := '';
       LyricLine.Words[W].RubyBase  := '';
       LyricLine.Words[W].Ruby      := '';
-      if FuriganaMode and Line.Notes[NoteIndex].HasSurface then
+      if Line.Notes[NoteIndex].HasSurface and (Line.Notes[NoteIndex].Surface <> '') then
         SetSurface(LyricLine.Words[W], Line.Notes[NoteIndex].Surface);
 
       LyricLine.Text := LyricLine.Text + LyricLine.Words[W].Text;
@@ -414,15 +421,21 @@ begin
           LyricLine.HasReading2 := true;
         end;
         if FuriganaMode then
-          Annot := Ruby
-        else if (Trim(Reading) <> '') and (Trim(Reading) <> Trim(Text)) then
         begin
-          Annot := Trim(Reading);
-          RubyPre := Copy(Text, 1, System.Length(Text) - System.Length(TrimLeft(Text)));
-          RubyBase := Trim(Text);
+          Annot := Ruby;
+          if Annot <> '' then
+            LyricLine.HasReading := true;
+        end
+        else
+        begin
+          // longq 2026-11-11: the romanization is one centred line of its own; every word contributes
+          // (Latin words as they are, so the line reads whole), held-note "~" tokens none. The line
+          // only shows when at least one word is really romanized.
+          if not ((Trim(Reading) = '~') or (Trim(Reading) = '-')) then
+            Annot := Reading;
+          if (Trim(Reading) <> '') and (Trim(Reading) <> '~') and (Trim(Reading) <> Trim(Text)) then
+            LyricLine.HasReading := true;
         end;
-        if Annot <> '' then
-          LyricLine.HasReading := true;
       end;
 
     UpdateLineMetrics(LyricLine);
@@ -571,7 +584,9 @@ begin
   // the lyric layout above is exactly stock. Each annotation is centred over its base and
   // spread sideways only where neighbours would touch; if the whole row is wider than the
   // bar, the annotation font (not the lyric) gets smaller, down to 60 %.
-  if LyricLine.HasReading then
+  if LyricLine.HasReading and not FuriganaMode then
+    LayoutReadingRow(LyricLine, RequestWidth, RequestHeight)
+  else if LyricLine.HasReading then
   begin
     LyricLine.ReadingHeight := LyricLine.Height * ReadingScale;
     // kana ruby: the font draws kana ~10% smaller than the kanji they sit on (measured 37-38 px vs 42 px
@@ -662,6 +677,52 @@ begin
         end;
   end;
   SetFontItalic(false);
+end;
+
+{**
+ * longq: the romanization as one line of its own, centred on the lyric box (operator 2026-11-11: "the
+ * romaji text should be centered to the frame, not start where the original starts"). Tokens keep the
+ * chart's word spacing (a token with a leading space starts a word); each token remembers its x so the
+ * sung part still lights up. Font: the stock lyric size x ReadingScale, smaller only if the row is wider
+ * than the box (down to 60 %).
+ *}
+procedure TLyricEngine.LayoutReadingRow(LyricLine: TLyricLine; RequestWidth, RequestHeight: real);
+var
+  I: integer;
+  Row, Tok: UTF8String;
+  TotalW, StartX: real;
+begin
+  LyricLine.ReadingHeight := RequestHeight * 0.9 * ReadingScale;
+  SetFontItalic(false);
+  SetFontSize(LyricLine.ReadingHeight);
+  Row := '';
+  for I := 0 to High(LyricLine.Words) do
+    with LyricLine.Words[I] do
+    begin
+      if Annot = '' then
+        Continue;
+      Tok := Annot;
+      if (Row = '') or (Row[System.Length(Row)] = ' ') then
+        Tok := TrimLeft(Tok);
+      if Tok = '' then
+      begin
+        Annot := '';
+        Continue;
+      end;
+      Annot := Tok;
+      AnnotL := TextWidth(Row);
+      Row := Row + Tok;
+    end;
+  TotalW := TextWidth(TrimRight(Row));
+  LyricLine.AnnotScale := 1;
+  if (TotalW > RequestWidth) and (TotalW > 0) then
+    LyricLine.AnnotScale := Max(0.6, RequestWidth / TotalW);
+  // line coordinates: x = 0 is the lyric's left edge, the lyric is centred in its slot
+  StartX := (LyricLine.Width - TotalW * LyricLine.AnnotScale) / 2;
+  for I := 0 to High(LyricLine.Words) do
+    with LyricLine.Words[I] do
+      if Annot <> '' then
+        AnnotL := StartX + AnnotL * LyricLine.AnnotScale;
 end;
 
 procedure TLyricEngine.UpdateLineMetrics();
@@ -755,19 +816,12 @@ begin
   // center lyrics
   LyricX := X + (W - Line.Width) / 2;
   LyricY := Y + (H - Line.Height) / 2;
-  // longq: in a slot grown for annotations (Reading space = Grow) the lyric sits in the stock-height
-  // part and the extra room goes where the annotation row is: above (ruby / reading above), below
-  // (reading below) or both (double line: centred). Song-level, so lines without readings do not jump.
-  if (ReadingMode <> 0) and (BaseLineH > 0) and (H > BaseLineH + 1) and not DoubleLine then
-  begin
-    if ReadingMode = 2 then
-      LyricY := Y + (BaseLineH - Line.Height) / 2
-    else
-      LyricY := Y + H - BaseLineH + (BaseLineH - Line.Height) / 2;
-  end;
-  // longq: the lyric stays at the stock position; the annotation of the current (upper) line sits
-  // in the free space just above it (ReadingLine=Above) or just below it (Below)
-  if ReadingMode = 2 then
+  // longq: the reading row of the current (upper) line: at the stack position from
+  // ULongqReadingLayout (between the current and the next line, or above the current one), else
+  // just above / below the lyric
+  if ReadOffset <> 0 then
+    ReadingY := Y + ReadOffset
+  else if ReadingMode = 2 then
     ReadingY := LyricY + Line.Height * 0.92
   else
     ReadingY := LyricY - Line.ReadingHeight * Line.AnnotScale * 0.92;
@@ -965,7 +1019,7 @@ begin
     DrawAnnotations(Line, LyricX, ReadingY, Alpha, Beat >= Line.StartNote, Line = UpperLine,
                     LyricsEffect, OutlineColor_en, 1);
   if Line.HasReading2 and (Line = UpperLine) then
-    DrawAnnotations(Line, LyricX, LyricY + Line.Height * 0.92, Alpha, Beat >= Line.StartNote, Line = UpperLine,
+    DrawAnnotations(Line, LyricX, IfThen(ReadOffset <> 0, ReadingY, LyricY + Line.Height * 0.92), Alpha, Beat >= Line.StartNote, Line = UpperLine,
                     LyricsEffect, OutlineColor_en, 2);
 
   // reset

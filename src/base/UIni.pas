@@ -1689,11 +1689,11 @@ begin
   NoteLines := ReadArrayIndex(INoteLines, IniFile, 'Lyrics', 'NoteLines', 1);
 
   // longq: reading line (romaji/kanji) from <chart>.reading, default above
-  ReadingLine := ReadArrayIndex(IReadingLine, IniFile, 'Lyrics', 'ReadingLine', 1);
-  Furigana := ReadArrayIndex(IFurigana, IniFile, 'Lyrics', 'Furigana', 1);
+  ReadingLine := ReadArrayIndex(IReadingLine, IniFile, 'Lyrics', 'ReadingLine', 2); // longq 2026-11-11: romaji under the lyric
+  Furigana := ReadArrayIndex(IFurigana, IniFile, 'Lyrics', 'Furigana', 0); // longq 2026-11-11: "never furigana" by default
   ReadingSize := ReadArrayIndex(IReadingSize, IniFile, 'Lyrics', 'ReadingSize', 4);
   ReadingDim := ReadArrayIndex(IReadingDim, IniFile, 'Lyrics', 'ReadingDim', 1);
-  ReadingSpace := ReadArrayIndex(IReadingSpace, IniFile, 'Lyrics', 'ReadingSpace', 1);
+  ReadingSpace := ReadArrayIndex(IReadingSpace, IniFile, 'Lyrics', 'ReadingSpace', 0); // longq: no longer used (Grow removed)
   LyricVersions := ReadArrayIndex(ILyricVersions, IniFile, 'Lyrics', 'LyricVersions', 1);
 
   // DefaultEncoding

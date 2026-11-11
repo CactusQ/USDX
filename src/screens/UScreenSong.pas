@@ -2018,7 +2018,12 @@ begin
     Exit;
   Next := LongqCycleVersion(Cur, Dir);
   if Next = Cur then
+  begin
+    // longq CJK: same chart, the romaji line was toggled
+    if Cur.ReadingChoice then
+      AudioPlayback.PlaySound(SoundLib.Change);
     Exit;
+  end;
   CatSongs.Song[Interaction] := Next;
   DuetChange := false;
   RapToFreestyle := false;
@@ -2036,9 +2041,9 @@ begin
   if (CatSongs.VisibleSongs = 0) or (Interaction < 0) or (Interaction > High(CatSongs.Song)) then
     Exit;
   Cur := CatSongs.Song[Interaction];
-  if (not LongqHasVersions(Cur)) or (Index < 0) or (Index > High(Cur.VersionGroup)) then
+  if not LongqHasVersions(Cur) then
     Exit;
-  Next := LongqSetVersion(Cur, Cur.VersionGroup[Index]);
+  Next := LongqSetVersionIndex(Cur, Index);
   if Next = Cur then
     Exit;
   CatSongs.Song[Interaction] := Next;

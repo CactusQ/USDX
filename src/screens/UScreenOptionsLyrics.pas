@@ -103,7 +103,6 @@ type
     iFuriganaSlide, // longq
     iReadingSizeSlide, // longq
     iReadingDimSlide, // longq
-    iReadingSpaceSlide, // longq
     iVersionsSlide, // longq
     iBackButton
   );
@@ -355,7 +354,7 @@ begin
   AddSelectSlide('SING_OPTIONS_LYRICS_FURIGANA', Ini.Furigana, IFuriganaTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_READING_SIZE', Ini.ReadingSize, IReadingSize);
   AddSelectSlide('SING_OPTIONS_LYRICS_READING_DIM', Ini.ReadingDim, IFuriganaTranslated); // longq: Off/On
-  AddSelectSlide('SING_OPTIONS_LYRICS_READING_SPACE', Ini.ReadingSpace, IReadingSpace);
+  // longq 2026-11-11: "Reading space" (Grow / Overlay) removed: the reading stack sizes the lyric box itself
   AddSelectSlide('SING_OPTIONS_LYRICS_VERSIONS', Ini.LyricVersions, IFuriganaTranslated); // longq: Off/On
 end;
 

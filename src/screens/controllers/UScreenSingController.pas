@@ -240,7 +240,8 @@ uses
   Classes,
   Math,
   ULongqAutotest,
-  ULongqCoverViz;
+  ULongqCoverViz,
+  ULongqReadingLayout;
 
 const
   MAX_MESSAGE = 3;
@@ -1634,23 +1635,66 @@ end;
 
 procedure TScreenSingController.ClearLyricEngines();
 var
-  ReadingMode, G: integer;
-  Furigana, Grow, Double: boolean;
+  ReadingMode, StackMode: integer;
+  Furigana, Double: boolean;
+  RScale, ExtUp, ExtDown: real;
+  Bar, BarDuet: TLongqReadStack;
+
+  procedure ApplyStack(Engine: TLyricEngine; const LB: TThemeLyricBar; const L: TLongqReadStack; On: boolean);
+  var
+    SlotH: real;
+  begin
+    if not On then
+    begin
+      // stock geometry
+      Engine.UpperLineY := LB.UpperY;
+      Engine.UpperLineH := LB.UpperH;
+      Engine.LowerLineY := LB.LowerY;
+      Engine.LowerLineH := LB.LowerH;
+      Engine.BaseLineH := LB.UpperH;
+      Engine.ReadOffset := 0;
+      Exit;
+    end;
+    // slot height so the engine's "font = 0.9 x slot, centred" puts the lyric cell at the stack position
+    SlotH := L.LineSize / 0.9;
+    Engine.BaseLineH := SlotH;
+    Engine.UpperLineH := SlotH;
+    Engine.LowerLineH := SlotH;
+    Engine.UpperLineY := L.UpperTop - (SlotH - L.LineSize) / 2;
+    Engine.LowerLineY := L.LowerTop - (SlotH - L.LineSize) / 2;
+    Engine.ReadOffset := L.ReadTop - Engine.UpperLineY;
+    if Engine.ReadOffset = 0 then
+      Engine.ReadOffset := 0.001;
+    Engine.ReadingScale := L.ReadScale;
+  end;
+
 begin
   Lyrics.Clear(CurrentSong.BPM);
   LyricsDuetP1.Clear(CurrentSong.BPM);
   LyricsDuetP2.Clear(CurrentSong.BPM);
 
-  // longq: annotations only for songs with a matching .reading. Furigana mode (kanji + kana
-  // ruby) puts the ruby above; otherwise the romanization goes above/below per Ini.ReadingLine.
+  // longq: annotations only for songs with a matching .reading. CJK charts (operator 2026-11-11): the
+  // romaji line is on unless the player picked the original script only for this song (song menu /
+  // L), and it goes under the current line unless Reading line = Above. Kanji + furigana (ruby above)
+  // stays an option, default Off.
   Furigana := CurrentSong.HasReading and CurrentSong.HasFurigana and (Ini.Furigana = 1);
   ReadingMode := 0;
-  if Furigana then
-    ReadingMode := 1
-  else if CurrentSong.HasReading then
-    ReadingMode := Ini.ReadingLine;
-  // longq: furigana + Reading line Below = kana ruby above the kanji and romaji under the lyric
-  Double := Furigana and (Ini.ReadingLine = 2);
+  if CurrentSong.HasReading then
+  begin
+    if CurrentSong.ReadingChoice then
+    begin
+      if not CurrentSong.ReadingOff then
+        ReadingMode := IfThen(Ini.ReadingLine = 1, 1, 2);
+    end
+    else
+      ReadingMode := Ini.ReadingLine;
+  end;
+  if Furigana and (ReadingMode = 0) then
+    Furigana := false;
+  // furigana + Reading line Below = kana ruby above the kanji and romaji under the lyric
+  Double := Furigana and (ReadingMode = 2);
+  if Furigana and not Double then
+    ReadingMode := 1;
   Lyrics.DoubleLine := Double;
   LyricsDuetP1.DoubleLine := Double;
   LyricsDuetP2.DoubleLine := Double;
@@ -1659,46 +1703,62 @@ begin
   LyricsDuetP2.ReadingDim := Ini.ReadingDim = 1;
   Lyrics.ReadingMode := ReadingMode;
   Lyrics.FuriganaMode := Furigana;
-  Lyrics.ReadingScale := IReadingSizeVals[Ini.ReadingSize];
   LyricsDuetP1.ReadingMode := ReadingMode;
   LyricsDuetP1.FuriganaMode := Furigana;
-  LyricsDuetP1.ReadingScale := IReadingSizeVals[Ini.ReadingSize];
   LyricsDuetP2.ReadingMode := ReadingMode;
   LyricsDuetP2.FuriganaMode := Furigana;
-  LyricsDuetP2.ReadingScale := IReadingSizeVals[Ini.ReadingSize];
-  Lyrics.BaseLineH := Theme.LyricBar.UpperH;
-  LyricsDuetP1.BaseLineH := Theme.LyricBar.UpperH;
-  LyricsDuetP2.BaseLineH := Theme.LyricBar.UpperH;
+  RScale := IReadingSizeVals[Ini.ReadingSize];
+  Lyrics.ReadingScale := RScale;
+  LyricsDuetP1.ReadingScale := RScale;
+  LyricsDuetP2.ReadingScale := RScale;
 
-  // longq: the annotation band needs room: each single-player slot grows by the annotation
-  // size, upwards (bar bottom stays put); the one-player note lanes move up into the space
-  // the theme leaves free above the bar (~32 units) only for what is left over
-  // operator 2026-11-09: lyric bar and note lanes stay at the stock geometry; annotations use
-  // the free space above the current line instead of growing the bar
-  // operator 2026-11-10 18:45: "same font size just more spaces for lyrics at bottom" -> Reading space = Grow
-  // (default) gives the annotation row(s) their own room; Overlay keeps the 2026-11-09 stock geometry
-  Grow := (ReadingMode <> 0) and (Ini.ReadingSpace = 1);
-  if Grow then
+  // operator 2026-11-11 ("USDX was designed to never override the lyrics overlay", "just less space
+  // between line 1 and 2"): no more Reading space = Grow. Current line, its romaji and the next line
+  // sit compact in the lyric box; the box grows only into the strip the note lanes of this player
+  // count never use (ULongqReadingLayout, proven by longq/rltest). Note lanes stay stock.
+  LongqNotesShift := 0;
+  StackMode := IfThen(ReadingMode = 1, 1, 2);
+  ExtUp := LongqMaxExtUp(Theme.Sing.StaticLyricsBar.Y, PlayersPlay);
+  ExtDown := LongqMaxExtDownDuet(Theme.Sing.StaticLyricsBarDuet.Y + Theme.Sing.StaticLyricsBarDuet.H, PlayersPlay);
+  if CurrentSong.isDuet and (PlayersPlay > 1) then
   begin
-    G := Round(Theme.LyricBar.UpperH * 0.9 * IReadingSizeVals[Ini.ReadingSize] * IfThen(Furigana, RUBY_KANA_COMP, 1)) + 2;
-    if Double then
-      G := 2 * G;
-  end
-  else
-    G := 0;
-  Lyrics.UpperLineH := Theme.LyricBar.UpperH + G;
-  Lyrics.LowerLineH := Theme.LyricBar.LowerH + G;
-  Lyrics.LowerLineY := Theme.LyricBar.LowerY - G;
-  Lyrics.UpperLineY := Theme.LyricBar.UpperY - 2 * G;
-  if Grow and (PlayersPlay = 1) then
-    LongqNotesShift := Max(0, 2 * G - 30)
-  else
-    LongqNotesShift := 0;
-  with Statics[screenSingViewRef.StaticLyricsBar].Texture do
-  begin
-    Y := Theme.Sing.StaticLyricsBar.Y - 2 * G;
-    H := Theme.Sing.StaticLyricsBar.H + 2 * G;
+    // both duet bars get the same font sizes
+    ExtUp := Min(ExtUp, ExtDown);
+    ExtDown := ExtUp;
   end;
+  Bar := LongqReadingStack(Theme.Sing.StaticLyricsBar.Y, Theme.Sing.StaticLyricsBar.H, Theme.LyricBar.UpperH,
+    StackMode, RScale, ExtUp, false);
+  BarDuet := LongqReadingStack(Theme.Sing.StaticLyricsBarDuet.Y, Theme.Sing.StaticLyricsBarDuet.H,
+    Theme.LyricBarDuetP1.UpperH, StackMode, RScale, ExtDown, true);
+  ApplyStack(Lyrics, Theme.LyricBar, Bar, ReadingMode <> 0);
+  ApplyStack(LyricsDuetP2, Theme.LyricBarDuetP2, Bar, ReadingMode <> 0);
+  ApplyStack(LyricsDuetP1, Theme.LyricBarDuetP1, BarDuet, ReadingMode <> 0);
+  with Statics[screenSingViewRef.StaticLyricsBar].Texture do
+    if ReadingMode <> 0 then
+    begin
+      Y := Bar.BoxY;
+      H := Bar.BoxH;
+    end
+    else
+    begin
+      Y := Theme.Sing.StaticLyricsBar.Y;
+      H := Theme.Sing.StaticLyricsBar.H;
+    end;
+  with Statics[screenSingViewRef.StaticLyricsBarDuet].Texture do
+    if ReadingMode <> 0 then
+    begin
+      Y := BarDuet.BoxY;
+      H := BarDuet.BoxH;
+    end
+    else
+    begin
+      Y := Theme.Sing.StaticLyricsBarDuet.Y;
+      H := Theme.Sing.StaticLyricsBarDuet.H;
+    end;
+  if ReadingMode <> 0 then
+    Log.LogStatus(Format('reading stack: %dp mode %d box %.1f+%.1f font %.1f romaji %.1f gap %.1f L1->L2 %.1f',
+      [PlayersPlay, StackMode, Bar.BoxY, Bar.BoxH, Bar.LineSize, Bar.ReadSize, Bar.Gap,
+       Bar.LowerTop - Bar.UpperTop]), 'ClearLyricEngines');
 end;
 
 procedure TScreenSingController.CalculateStartTime;

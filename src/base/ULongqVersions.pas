@@ -20,6 +20,9 @@ uses
   Classes,
   USong;
 
+type
+  TLongqLabels = array of UTF8String;
+
 { Rebuild the groups over all loaded songs; keeps each group's last picked version. }
 procedure LongqGroupVersions(SongList: TList);
 { The member Dir steps away (+1 next, -1 previous) from Cur; marks it as the group's entry.
@@ -31,8 +34,12 @@ function LongqHasVersions(S: TSong): boolean;
 { Make Target (a member of Cur's group) the group's entry and remember it in the data dir
   (lyric_versions.txt, read at the next start). Returns Target, or Cur if Target is not a member. }
 function LongqSetVersion(Cur, Target: TSong): TSong;
-{ Position of S in its group, -1 without siblings. }
+{ Position of S in its group, -1 without siblings. CJK reading charts: 0 = + ROMAJI, 1 = original only. }
 function LongqVersionIndex(S: TSong): integer;
+{ Short picker labels for the song menu Lyrics row ("KR + ROMAJI" / "KR", "ORIGINAL" / "AI" ...). }
+function LongqVersionLabels(S: TSong): TLongqLabels;
+{ Pick entry Index of LongqVersionLabels; returns the chart to show (Cur for the CJK romaji toggle). }
+function LongqSetVersionIndex(Cur: TSong; Index: integer): TSong;
 { Headless check: with LONGQ_VERSIONS_DRYRUN=1 (run with SDL_VIDEODRIVER=dummy and a scratch
   USDX_DATA_NAME) load the song folders of the config, group, pick, re-group, print, exit. }
 procedure LongqVersionsDryRun;
@@ -41,6 +48,7 @@ implementation
 
 uses
   SysUtils,
+  StrUtils,
   Math,
   UCatCovers,
   UIni,
@@ -95,6 +103,11 @@ begin
   Result := S.Path.Append(S.FileName).ToNative;
 end;
 
+function ReadingPickId(S: TSong): string;
+begin
+  Result := 'reading:' + ChartId(S);
+end;
+
 function GroupId(S: TSong): string;
 var
   Words: UTF8String;
@@ -108,6 +121,8 @@ var
   I: integer;
 begin
   Result := -1;
+  if Assigned(S) and S.ReadingChoice then
+    Exit(Ord(S.ReadingOff));
   if Assigned(S) then
     for I := 0 to High(S.VersionGroup) do
       if S.VersionGroup[I] = S then
@@ -116,12 +131,18 @@ end;
 
 function LongqHasVersions(S: TSong): boolean;
 begin
-  Result := Assigned(S) and (not S.Main) and (Length(S.VersionGroup) > 1);
+  Result := Assigned(S) and (not S.Main) and ((Length(S.VersionGroup) > 1) or S.ReadingChoice);
 end;
 
 function LongqVersionTitle(S: TSong): UTF8String;
+var
+  Words: UTF8String;
 begin
-  if LongqHasVersions(S) then
+  // CJK: plain title, the script/romaji choice is not a different song (operator 2026-11-11:
+  // "'Hangeul + reading' should be no title")
+  if Assigned(S) and S.ReadingChoice then
+    Result := LVStripSuffix(S.Title, Words)
+  else if LongqHasVersions(S) then
     Result := S.VersionBaseTitle + '  < ' + S.VersionLabel + ' >'
   else
     Result := S.Title;
@@ -146,7 +167,7 @@ var
   Keys: array of UTF8String;
   Members: array of TSong;
   Labels: array of UTF8String;
-  I, J, K, N, T, Pick, Groups, Grouped: integer;
+  I, J, K, N, T, Pick, Best, Groups, Grouped, Folded, Choice: integer;
   S: TSong;
   TmpS: UTF8String;
   Words: UTF8String;
@@ -162,6 +183,7 @@ begin
     S.VersionGroup := nil;
     S.VersionLabel := '';
     S.VersionBaseTitle := '';
+    S.ReadingChoice := false;
     Songs[N] := S;
     Inc(N);
   end;
@@ -179,6 +201,7 @@ begin
 
   Groups := 0;
   Grouped := 0;
+  Folded := 0;
   for I := 0 to N - 1 do
   begin
     if (Rep[I] <> I) or (Cnt[I] < 2) then
@@ -238,6 +261,28 @@ begin
           if ChartId(Members[K]) = TmpS then
             Pick := K;
     end;
+    // longq CJK (operator 2026-11-11): a song with an original-script chart (it has a .reading) shows that
+    // chart only; romaji-only charts and duplicate AI/fixed siblings are folded away (files kept), the
+    // picker then toggles the romaji line. Best = the remembered pick if it is a script chart, else the
+    // first script chart in the group order (Original first).
+    Best := -1;
+    for K := 0 to High(Members) do
+      if (Members[K].VersionReadingKind > 1) and ((Best < 0) or (K = Pick)) then
+        Best := K;
+    if Best >= 0 then
+    begin
+      for K := 0 to High(Members) do
+      begin
+        S := Members[K];
+        S.VersionGroup := nil;
+        S.VersionLabel := Labels[K];
+        S.VersionBaseTitle := LVStripSuffix(Members[0].Title, Words);
+        S.VersionHidden := (K <> Best);
+        S.VersionChosen := (K = Best);
+      end;
+      Inc(Folded, Length(Members) - 1);
+      Continue;
+    end;
     for K := 0 to High(Members) do
     begin
       S := Members[K];
@@ -248,8 +293,39 @@ begin
       S.VersionChosen := (K = Pick);
     end;
   end;
-  Log.LogStatus(Format('lyric versions: %d charts in %d groups, %d song-list entries',
-    [Grouped, Groups, N - Grouped + Groups]), 'LongqGroupVersions');
+  // every visible chart with a .reading (CJK in original script) gets the romaji toggle
+  Choice := 0;
+  LoadPicks;
+  for I := 0 to N - 1 do
+  begin
+    S := Songs[I];
+    if S.VersionHidden or (Length(S.VersionGroup) > 1) then
+      Continue;
+    if S.VersionReadingKind = 0 then
+      S.VersionReadingKind := LVReadingKind(S.Path.Append(S.FileName).SetExtension('.reading').ToNative) + 1;
+    if S.VersionReadingKind <= 1 then
+      Continue;
+    S.ReadingChoice := true;
+    S.ReadingLang := LVReadingLang(S.Path.Append(S.FileName).SetExtension('.reading').ToNative);
+    if S.ReadingLang = '' then
+      S.ReadingLang := LVLangCode(S.Language);
+    S.ReadingOff := Picks.Values[ReadingPickId(S)] = 'off';
+    Inc(Choice);
+  end;
+  Log.LogStatus(Format('lyric versions: %d charts in %d groups, %d song-list entries, %d CJK folded, %d romaji toggles',
+    [Grouped, Groups, N - Grouped + Groups, Folded, Choice]), 'LongqGroupVersions');
+end;
+
+procedure SetReadingOff(S: TSong; Off: boolean);
+begin
+  S.ReadingOff := Off;
+  LoadPicks;
+  if Off then
+    Picks.Values[ReadingPickId(S)] := 'off'
+  else
+    Picks.Values[ReadingPickId(S)] := ''; // default (+ romaji) needs no line
+  SavePicks;
+  Log.LogStatus(Format('romaji line %s -> %s', [IfThen(Off, 'off', 'on'), ChartId(S)]), 'LongqVersions');
 end;
 
 function LongqCycleVersion(Cur: TSong; Dir: integer): TSong;
@@ -259,6 +335,11 @@ begin
   Result := Cur;
   if not LongqHasVersions(Cur) then
     Exit;
+  if Cur.ReadingChoice then
+  begin
+    SetReadingOff(Cur, not Cur.ReadingOff);
+    Exit;
+  end;
   N := Length(Cur.VersionGroup);
   Pos := Max(0, LongqVersionIndex(Cur));
   Result := LongqSetVersion(Cur, Cur.VersionGroup[((Pos + Dir) mod N + N) mod N]);
@@ -269,6 +350,8 @@ var
   I, N: integer;
 begin
   Result := Cur;
+  if Cur.ReadingChoice or Target.ReadingChoice then
+    Exit;
   if (not LongqHasVersions(Cur)) or (Target = Cur) or (LongqVersionIndex(Target) < 0)
     or (Target.VersionGroup[0] <> Cur.VersionGroup[0]) then
     Exit;
@@ -291,10 +374,67 @@ begin
   Log.LogStatus('lyric version: ' + Result.VersionLabel + ' -> ' + ChartId(Result), 'LongqSetVersion');
 end;
 
+function ShortLabel(const L: UTF8String): UTF8String;
+var
+  U: UTF8String;
+begin
+  // the Lyrics row is one menu button wide: short words (operator 2026-11-11 "use short words")
+  U := UpperCase(L);
+  if Pos('AI', U) = 1 then
+    U := 'AI' + Copy(U, 3, MaxInt);
+  U := StringReplace(U, 'ROMANIZED', 'ROMAJI', [rfReplaceAll]);
+  U := StringReplace(U, 'ROMANIZATION', 'ROMAJI', [rfReplaceAll]);
+  Result := U;
+end;
+
+function LongqVersionLabels(S: TSong): TLongqLabels;
+var
+  I: integer;
+  Code, Rom: UTF8String;
+begin
+  SetLength(Result, 0);
+  if not Assigned(S) then
+    Exit;
+  if S.ReadingChoice then
+  begin
+    Code := S.ReadingLang;
+    if Code = '' then
+      Code := 'ORIGINAL';
+    if Code = 'CN' then
+      Rom := 'PINYIN'
+    else
+      Rom := 'ROMAJI';
+    SetLength(Result, 2);
+    Result[0] := Code + ' + ' + Rom;
+    Result[1] := Code;
+    Exit;
+  end;
+  SetLength(Result, Length(S.VersionGroup));
+  for I := 0 to High(S.VersionGroup) do
+    Result[I] := ShortLabel(S.VersionGroup[I].VersionLabel);
+end;
+
+function LongqSetVersionIndex(Cur: TSong; Index: integer): TSong;
+begin
+  Result := Cur;
+  if not LongqHasVersions(Cur) then
+    Exit;
+  if Cur.ReadingChoice then
+  begin
+    if (Index = 0) or (Index = 1) then
+      if Cur.ReadingOff <> (Index = 1) then
+        SetReadingOff(Cur, Index = 1);
+    Exit;
+  end;
+  if (Index >= 0) and (Index <= High(Cur.VersionGroup)) then
+    Result := LongqSetVersion(Cur, Cur.VersionGroup[Index]);
+end;
+
 procedure LongqVersionsDryRun;
 var
-  I, Entries, Hidden, Grouped, E, Fails: integer;
+  I, Entries, Hidden, Grouped, E, C, Fails: integer;
   S, Picked: TSong;
+  Lbl: TLongqLabels;
   Want: UTF8String;
   K: integer;
 
@@ -340,11 +480,21 @@ begin
     [Songs.SongList.Count, Entries, Grouped, Hidden]));
   Expect(Entries + Hidden = Songs.SongList.Count, 'every chart is an entry or hidden behind one');
   E := -1;
+  C := -1;
   for I := 0 to High(CatSongs.Song) do
   begin
     S := CatSongs.Song[I];
     if not LongqHasVersions(S) then
       Continue;
+    if S.ReadingChoice then
+    begin
+      Lbl := LongqVersionLabels(S);
+      if C < 0 then
+        C := I;
+      WriteLn('CJK ', S.Artist, ' - ', LongqVersionTitle(S), '  options: ', Lbl[0], ' (default) | ', Lbl[1],
+        '  now: ', Lbl[LongqVersionIndex(S)], '  chart: ', S.Path.Append(S.FileName).ToNative);
+      Continue;
+    end;
     if E < 0 then
       E := I;
     WriteLn('ENTRY ', S.Artist, ' - ', LongqVersionTitle(S));
@@ -383,6 +533,20 @@ begin
       if CatSongs.Song[I] = Picked then
         K := I;
     Expect(K >= 0, 'pick remembered across restart via ' + PicksFile);
+  end;
+  if C >= 0 then
+  begin
+    S := CatSongs.Song[C];
+    Expect(Pos('<', LongqVersionTitle(S)) = 0, 'CJK title has no version label: ' + LongqVersionTitle(S));
+    Expect((LongqVersionIndex(S) = 0) or (GetEnvironmentVariable('USDX_DATA_NAME') = ''), 'CJK default = + romaji');
+    Picked := LongqCycleVersion(S, 1);
+    Expect((Picked = S) and S.ReadingOff, 'CJK L toggles the romaji line off on the same chart');
+    S.ReadingOff := false;
+    FreeAndNil(Picks);
+    CatSongs.Refresh;
+    Expect(S.ReadingOff, 'CJK romaji pick remembered across restart');
+    LongqSetVersionIndex(S, 0);
+    Expect(not S.ReadingOff, 'CJK pick 0 = + romaji again');
   end;
   Ini.LyricVersions := 0;
   CatSongs.Refresh;

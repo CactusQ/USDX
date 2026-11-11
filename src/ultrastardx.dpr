@@ -201,6 +201,7 @@ uses
   ULongqAutotest    in 'base\ULongqAutotest.pas',
   ULongqVersionKey  in 'base\ULongqVersionKey.pas',
   ULongqVersions    in 'base\ULongqVersions.pas',
+  ULongqReadingLayout in 'base\ULongqReadingLayout.pas',
   UEditorLyrics     in 'base\UEditorLyrics.pas',
   USkins            in 'base\USkins.pas',
   UThemes           in 'base\UThemes.pas',
