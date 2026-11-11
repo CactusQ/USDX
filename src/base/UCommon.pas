@@ -559,6 +559,10 @@ begin
   MessageBox(0, PChar(msg), PChar(USDXVersionStr()), Flags);
 {$ELSE}
   ConsoleWriteln(msg);
+  // longq: a LONGQ_HIDDEN test run must never open a window; a native message box did (2026-11-11, chart
+  // without its audio file -> critical error) and then blocked until someone clicked it
+  if GetEnvironmentVariable('LONGQ_HIDDEN') <> '' then
+    Exit;
   case msgType of
     mtInfo:  Flags := SDL_MESSAGEBOX_INFORMATION;
     mtError: Flags := SDL_MESSAGEBOX_ERROR;
