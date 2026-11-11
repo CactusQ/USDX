@@ -67,8 +67,10 @@ const
   // drum onset picking (mirrored in ~/.local/share/usdx_ai/vizvivid/ana.py, tuned there on 16 songs):
   // a row is an onset when its flux is the local max of +-ONS_D rows, above mean(window) * mult + floor *
   // running flux peak, and at least gap rows after the previous onset of that band
-  SONG_HYPE = 0.6;  // song energy >= : hype set; < SONG_CALM: calm set
-  SONG_CALM = 0.35;
+  // song energy >= SONG_HYPE: hype set; < SONG_CALM: calm set (16-song calibration 2026-11-11: ballads
+  // 0.49-0.57, trap/dance 0.64-0.94)
+  SONG_HYPE = 0.63;
+  SONG_CALM = 0.58;
   ONS_D = 3;
   ONS_W = 25;
   ONS_MULT: array[0..2] of single = (1.8, 1.5, 1.4);   // kick, snare, hat
@@ -399,9 +401,9 @@ const
     '  float env = rd.y * 0.5 + 0.5 + 0.15 * sin(rd.x * 6.0 + uTime * 0.3);'#10 +
     '  vec3 col = mix(uPal[1] * 0.6, mix(vec3(0.85), pal(env + uParam.w), 0.7), smoothstep(0.1, 0.9, env));'#10 +
     '  float spec = pow(max(dot(rd, normalize(vec3(0.3, 0.6, 0.7))), 0.0), 40.0);'#10 +
-    '  col += vec3(1.0) * spec * (0.6 + 1.2 * uHigh);'#10 +
+    '  col += vec3(1.0) * spec * (0.6 + 0.5 * uHigh);'#10 +
     '  col += uPal[3] * pow(1.0 - n.z, 3.0) * (0.4 + uMid);'#10 +
-    '  col *= 0.85 + 0.3 * uBass + (0.04 + 0.16 * uDrive) * uKick;'#10 +
+    '  col *= 0.92 + 0.12 * uBass + (0.03 + 0.06 * uDrive) * uKick;'#10 +
     '  vec4 c = coverCard(p - vec2(0.0, 0.08), 0.24 * (1.0 + 0.03 * uBass + (0.01 + 0.04 * uDrive) * uKick), 0.5);'#10 +
     '  col = mix(col, c.rgb, c.a * 0.92 * uHasCover);'#10 +
     '  return col;'#10 +
@@ -418,8 +420,9 @@ const
     // bright/dark as the tiles scrolled (8 flashes/s on Stronger drops, 2026-11-11 flash test)
     '  t.y += floor(t.x) * 0.333;'#10 +
     '  vec2 c = abs(fract(t) - 0.5) * 2.0 - 0.5;'#10 +
-    '  vec3 wall = uHasCover > 0.5 ? cover(c * 0.95, 2.0) : pal(t.y * 0.3 + fbm(t * 4.0));'#10 +
-    '  wall = mix(grade(wall), wall, 0.4) * (0.8 + 0.4 * uBass);'#10 +
+    '  vec3 wall = uHasCover > 0.5 ? cover(c * 0.95, 3.0) : pal(t.y * 0.3 + fbm(t * 4.0));'#10 +
+    '  wall = mix(wall, cover(vec2(0.0), 9.0), 0.35);'#10 +
+    '  wall = mix(grade(wall), wall, 0.4) * (0.88 + 0.15 * uBass);'#10 +
     '  float ring = smoothstep(0.44, 0.5, abs(fract(z * 2.0) - 0.5));'#10 +
     '  wall += uPal[3] * ring * (0.3 + (0.2 + 0.4 * uDrive) * uKick);'#10 +
     '  vec3 col = wall * smoothstep(0.0, 0.35, r);'#10 +
@@ -428,7 +431,7 @@ const
     '    vec2 gi = floor(g); float h = hash(gi + float(i) * 17.0);'#10 +
     '    st += step(0.93, h) * smoothstep(0.3, 0.0, abs(fract(g.x) - 0.5)) * smoothstep(0.0, 0.5, fract(g.y)) * smoothstep(1.0, 0.6, fract(g.y)); }'#10 +
     '  col += vec3(0.9, 0.95, 1.0) * st * (0.4 + 1.2 * uHigh) * smoothstep(0.05, 0.4, r);'#10 +
-    '  col += uPal[4] * exp(-r * 9.0) * (0.6 + uBass);'#10 +
+    '  col += uPal[4] * exp(-r * 9.0) * (0.6 + 0.4 * uBass);'#10 +
     '  return col;'#10 +
     '}'#10;
 
@@ -1477,7 +1480,8 @@ end;
   opt-in via Ctrl+Tab (cycles all) or LONGQ_VIZ_TEMPLATE. }
 procedure TLcvVideo.DecideMood;
 const
-  HypeSet: array[0..3] of integer = (9, 9, 0, 5);    // neon ring, cover pulse, star tunnel
+  // star tunnel + liquid chrome are opt-in: 4-5 flashes/s measured on Disturbia drops (2026-11-11)
+  HypeSet: array[0..3] of integer = (9, 9, 0, 8);    // neon ring, cover pulse, aurora (0 flashes on 16 songs)
   MidSet: array[0..3] of integer = (9, 9, 0, 8);     // neon ring, cover pulse, aurora
   CalmSet: array[0..3] of integer = (9, 9, 8, 6);    // neon ring, aurora, neon haze (fog)
 var

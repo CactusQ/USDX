@@ -15,7 +15,7 @@ APP="${APP:-$REPO/UltraStar Deluxe.app}"
 # "NEVER BOTHER ME FROM 9AM TO 1AM ... ALL THAT IN NIGHT TIME OR IF I EXPLICITLY SAY NOW"). A LONGQ_HIDDEN run
 # still showed a window on 2026-11-10 14:55. USDX_GUI_NOW=1 only when he said "now" in this conversation.
 H=$(date +%H); H=${H#0}
-if [ "${USDX_GUI_NOW:-}" != 1 ] && [ "$H" -ge 9 ]; then
+if [ "${USDX_GUI_NOW:-}" != 1 ] && { [ "$H" -ge 9 ] || [ "$H" -lt 1 ]; }; then
   echo "hidden_test.sh: refused, it is $(date +%H:%M); game test runs only 01:00-09:00 (operator rule 2026-11-10)" >&2; exit 75
 fi
 LIVE_CFG="$HOME/Library/Application Support/UltraStarDeluxe2026.2.0/config.ini"

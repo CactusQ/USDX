@@ -8,7 +8,7 @@ APP="${APP:-$REPO/UltraStar Deluxe.app}"
 [ $# -ge 3 ] || { sed -n 2,5p "$0"; exit 1; }
 OUT="$1"; TAG="$2"; CHART="$3"; shift 3
 H=$(date +%H); H=${H#0}
-if [ "${USDX_GUI_NOW:-}" != 1 ] && [ "$H" -ge 9 ]; then
+if [ "${USDX_GUI_NOW:-}" != 1 ] && { [ "$H" -ge 9 ] || [ "$H" -lt 1 ]; }; then
   echo "reading_frames.sh: refused at $(date +%H:%M); runs only 01:00-09:00 (operator rule 2026-11-10)" >&2; exit 75
 fi
 mkdir -p "$OUT"
