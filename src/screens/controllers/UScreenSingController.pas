@@ -93,6 +93,15 @@ type
     SeekSkippedValue: array [0..1] of integer;
     SeekSkippedLines: array [0..1] of integer;
     SeekLineSkipped:  array [0..1] of array of boolean;
+    // longq: score snapshot at each line start; a backward seek restores the one at the line it lands in, so only
+    // the points earned after that point are taken away (operator 2026-11-11: "rewind resets the score to 0")
+    SeekSnaps: array of record
+      Beat: integer;
+      Score, ScoreLine, ScoreGolden, ScoreLast: array of real;
+      SkipValue, SkipLines: array [0..1] of integer;
+      LineSkipped: array [0..1] of array of boolean;
+    end;
+    procedure SeekSnapshot(Beat: integer);
     procedure SeekTo(NewPosition: real);
     function SeekScoreValue(Track: integer): integer;
   public
@@ -1364,6 +1373,7 @@ procedure TScreenSingController.SeekResetSkips();
 var
   T: integer;
 begin
+  SetLength(SeekSnaps, 0);
   for T := 0 to 1 do
   begin
     SeekSkippedValue[T] := 0;
@@ -1444,9 +1454,39 @@ begin
   end;
 end;
 
+procedure TScreenSingController.SeekSnapshot(Beat: integer);
+var
+  K, i1, T: integer;
+begin
+  K := Length(SeekSnaps);
+  if (K > 0) and (SeekSnaps[K - 1].Beat >= Beat) then
+  begin
+    if SeekSnaps[K - 1].Beat > Beat then
+      Exit; // never record behind the newest one
+    Dec(K);   // same line start (other duet track): refresh
+  end;
+  SetLength(SeekSnaps, K + 1);
+  with SeekSnaps[K] do
+  begin
+    SetLength(Score, Length(Player)); SetLength(ScoreLine, Length(Player));
+    SetLength(ScoreGolden, Length(Player)); SetLength(ScoreLast, Length(Player));
+    for i1 := 0 to High(Player) do
+    begin
+      Score[i1] := Player[i1].Score; ScoreLine[i1] := Player[i1].ScoreLine;
+      ScoreGolden[i1] := Player[i1].ScoreGolden; ScoreLast[i1] := Player[i1].ScoreLast;
+    end;
+    for T := 0 to 1 do
+    begin
+      SkipValue[T] := SeekSkippedValue[T]; SkipLines[T] := SeekSkippedLines[T];
+      LineSkipped[T] := Copy(SeekLineSkipped[T], 0, Length(SeekLineSkipped[T]));
+    end;
+  end;
+  SeekSnaps[K].Beat := Beat;
+end;
+
 procedure TScreenSingController.SeekTo(NewPosition: real);
 var
-  OldBeatD, NewBeatD, T, MaxT, L, i1: integer;
+  OldBeatD, NewBeatD, T, MaxT, L, i1, K, LineBeat: integer;
   Color: TRGB;
   function BeatDAt(Time: real): integer;
   begin
@@ -1468,7 +1508,54 @@ begin
 
   if NewPosition < AudioPlayback.Position then
   begin
-    // backward: reset scores like upstream, then skip everything before here
+    // backward: land on the start of the line we seek into and restore the scores from that moment
+    LineBeat := Low(integer);
+    for L := 0 to CurrentSong.Tracks[0].High do
+      if Floor(GetMidBeat(NewPosition - LyricsState.StartTime / 1000)) >= CurrentSong.Tracks[0].Lines[L].StartBeat then
+        LineBeat := CurrentSong.Tracks[0].Lines[L].StartBeat;
+    K := High(SeekSnaps);
+    while (K >= 0) and (SeekSnaps[K].Beat > LineBeat) do
+      Dec(K);
+  end
+  else
+    K := -1;
+
+  if (NewPosition < AudioPlayback.Position) and (K >= 0) then
+  begin
+    for i1 := 0 to High(Player) do
+      if i1 <= High(SeekSnaps[K].Score) then
+        with Player[i1] do
+        begin
+          Score := SeekSnaps[K].Score[i1];
+          ScoreLine := SeekSnaps[K].ScoreLine[i1];
+          ScoreGolden := SeekSnaps[K].ScoreGolden[i1];
+          ScoreLast := SeekSnaps[K].ScoreLast[i1];
+          LastSentencePerfect := false;
+        end;
+    for T := 0 to 1 do
+    begin
+      SeekSkippedValue[T] := SeekSnaps[K].SkipValue[T];
+      SeekSkippedLines[T] := SeekSnaps[K].SkipLines[T];
+      SeekLineSkipped[T] := Copy(SeekSnaps[K].LineSkipped[T], 0, Length(SeekSnaps[K].LineSkipped[T]));
+    end;
+    NewPosition := Max(0, GetTimeFromBeat(SeekSnaps[K].Beat) - 0.001);
+    NewBeatD := BeatDAt(NewPosition);
+    SetLength(SeekSnaps, K); // the line start re-records itself when it is reached again
+    Scores.KillAllPopUps;
+    Scores.ClearPlayers;
+    for i1 := 0 to PlayersPlay - 1 do
+    begin
+      if (CurrentSong.isDuet) and (PlayersPlay <> 1) then
+        Color := GetPlayerColor(Ini.PlayerColor[i1])
+      else
+        Color := GetPlayerColor(Ini.SingColor[i1]);
+      Scores.AddPlayer(Tex_ScoreBG[i1], Color);
+    end;
+    Scores.Init;
+  end
+  else if NewPosition < AudioPlayback.Position then
+  begin
+    // backward before the first line: reset scores like upstream, then skip everything before here
     for i1 := 0 to High(Player) do
       with Player[i1] do
       begin
@@ -2100,6 +2187,17 @@ begin
     end;
   end;
 
+  // longq: this line's last notes + bonus land up to MicDelay after the next line started; fold them into that
+  // line's snapshot so a rewind to it keeps them
+  if (Length(SeekSnaps) > 0) and (Integer(SentenceIndex) < CurrentSong.Tracks[Track].High)
+    and (SeekSnaps[High(SeekSnaps)].Beat = CurrentSong.Tracks[Track].Lines[SentenceIndex + 1].StartBeat) then
+    with SeekSnaps[High(SeekSnaps)] do
+      for PlayerIndex := 0 to High(Player) do
+        if PlayerIndex <= High(Score) then
+        begin
+          Score[PlayerIndex] := Player[PlayerIndex].Score; ScoreLine[PlayerIndex] := Player[PlayerIndex].ScoreLine;
+          ScoreGolden[PlayerIndex] := Player[PlayerIndex].ScoreGolden; ScoreLast[PlayerIndex] := Player[PlayerIndex].ScoreLast;
+        end;
 end;
 
  // Called on sentence change
@@ -2110,6 +2208,8 @@ var
 begin
   // goldenstarstwinkle
   GoldenRec.SentenceChange(Track);
+  if (CurrentSong <> nil) and (Integer(SentenceIndex) <= CurrentSong.Tracks[Track].High) then
+    SeekSnapshot(CurrentSong.Tracks[Track].Lines[SentenceIndex].StartBeat); // longq: rewind keeps earlier points
 
   if (CurrentSong.isDuet) and (PlayersPlay <> 1) then
   begin
