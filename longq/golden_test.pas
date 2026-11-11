@@ -59,6 +59,19 @@ begin
   Check(Abs(No + Go - (Exp + LONGQ_GOLDEN_POOL)) < 0.01, Format('seek skips 400 normal + 5 golden: perfect still %.2f', [No + Go]));
   Sim(2500, 25, 400, 0, No, Go);
   Check(Abs(No + Go - (Exp + LONGQ_GOLDEN_POOL)) < 0.01, Format('seek skips 400 normal: perfect still %.2f', [No + Go]));
+  // flawless-only 10000 (operator 2026-11-11 12:15)
+  Check(LongqCapTotal(10000.0, false) = 10000, 'flawless raw 10000 -> 10000');
+  Check(LongqCapTotal(9999.999, false) = 10000, 'flawless with float error 9999.999 -> 10000');
+  Check(LongqCapTotal(9999.6, false) = 9999, 'one missed tiny beat 9999.6 -> 9999, not rounded up to 10000');
+  Check(LongqCapTotal(9998.4, false) = 9998, 'normal rounding below 10000 unchanged');
+  Check(LongqCapTotal(10000.4, false) = 10000, 'never above 10000');
+  Sim(2500, 25, 400, 5, No, Go);
+  Check(LongqCapTotal(No + Go + LONGQ_LINE_BONUS, true) = 9990, Format('seek-skipped perfect run %.2f -> 9990', [No + Go + LONGQ_LINE_BONUS]));
+  Check(LongqCapTotal(8123.4, true) = 8123, 'seek-skipped normal run below cap unchanged');
+  Sim(20000, 25, 0, 0, No, Go);
+  LongqPoolWeights(20000, 25, WN, WG, Pool);
+  Check(LongqCapTotal(No + Go + LONGQ_LINE_BONUS - Pool / (20000.0 * WN + 25.0 * WG) * WN, false) < 10000,
+    'long chart (20000 beats): perfect minus one normal beat stays below 10000');
   LongqPoolWeights(2500, 25, WN, WG, Pool);
   WriteLn(Format('AI chart: golden beat = %.1f pts, normal beat = %.2f pts (x%.1f)',
     [Pool / (2500.0 * WN + 25.0 * WG) * WG, Pool / (2500.0 * WN + 25.0 * WG) * WN, WG / WN]));
