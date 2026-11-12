@@ -204,6 +204,7 @@ uses
   ULongqVersionKey  in 'base\ULongqVersionKey.pas',
   ULongqVersions    in 'base\ULongqVersions.pas',
   ULongqTranspose   in 'base\ULongqTranspose.pas',
+  ULongqSeekMath    in 'base\ULongqSeekMath.pas',
   ULongqReadingLayout in 'base\ULongqReadingLayout.pas',
   UEditorLyrics     in 'base\UEditorLyrics.pas',
   USkins            in 'base\USkins.pas',

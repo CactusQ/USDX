@@ -41,6 +41,7 @@ uses
   UHookableEvent,
   UIni,
   ULongqGolden,
+  ULongqSeekMath,
   ULyrics,
   UMenu,
   UMusic,
@@ -103,6 +104,8 @@ type
       LineSkipped: array [0..1] of array of boolean;
       Gold: TLongqGoldSnap; // longq: bonus spots hit so far
     end;
+    LongqLastBackPlan: TLongqBackPlan; // longq: last rewind decision (autotest log)
+    LongqRestartArmedAt: cardinal; // longq: SDL ticks of the first R press, 0 = not armed
     procedure SeekSnapshot(Beat: integer);
     procedure SeekTo(NewPosition: real);
     function SeekScoreValue(Track: integer): integer;
@@ -261,6 +264,7 @@ var
   Color:        TRGB;
   ResumeAfterHelp: boolean;
   NewPosition:  real;
+  NN, NI:       integer;
 begin
   Result := true;
   if (PressedDown) then
@@ -268,6 +272,10 @@ begin
 
     SDL_ModState := SDL_GetModState and (KMOD_LSHIFT + KMOD_RSHIFT
     + KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT  + KMOD_RALT);
+
+    // longq: any other key disarms a pending R restart
+    if PressedKey <> SDLK_R then
+      LongqRestartArmedAt := 0;
 
     // check normal keys
     case PressedKey of
@@ -285,9 +293,21 @@ begin
       end;
 
       // restart song
+      // longq (operator 2026-11-12: one key must never lose a run): R only arms the restart, a second R
+      // within 2 s restarts; any other key in between disarms it
       SDLK_R:
       begin
         if ScreenSong.Mode = smMedley then Exit;
+        if (SDL_ModState <> 0) or (LongqRestartArmedAt = 0) or (SDL_GetTicks - LongqRestartArmedAt > 2000) then
+        begin
+          if SDL_ModState = 0 then
+          begin
+            LongqRestartArmedAt := Max(1, SDL_GetTicks);
+            screenSingViewRef.WriteMessage('Press R again to restart the song');
+          end;
+          Exit;
+        end;
+        LongqRestartArmedAt := 0;
         for i1 := 0 to High(Player) do
         with Player[i1] do
         begin
@@ -615,6 +635,11 @@ begin
           if i1 <> LongqTransposeSemis then
           begin
             LongqTransposeNotes(CurrentSong, i1 - LongqTransposeSemis);
+            // longq: bars already sung on this line move with their notes (drawn relative to the line's BaseNote,
+            // which just moved), so a hit stays drawn on its note
+            for NN := 0 to High(Player) do
+              for NI := 0 to Min(Player[NN].HighNote, High(Player[NN].Note)) do
+                Player[NN].Note[NI].Tone := Player[NN].Note[NI].Tone + (i1 - LongqTransposeSemis);
             LongqTransposeSemis := i1;
             LongqTransposeSave(CurrentSong, i1);
           end;
@@ -735,6 +760,7 @@ begin
   inherited;
 
   Log.LogStatus('Begin', 'OnShow');
+  LongqRestartArmedAt := 0;
 
   if not Help.SetHelpID(ID) then
     Log.LogWarn('No Entry for Help-ID ' + ID, 'ScreenSingController');
@@ -1534,8 +1560,11 @@ end;
 
 procedure TScreenSingController.SeekTo(NewPosition: real);
 var
-  OldBeatD, NewBeatD, T, MaxT, L, i1, K, LineBeat: integer;
+  OldBeatD, NewBeatD, T, MaxT, L, N, i1, K: integer;
   Color: TRGB;
+  LStarts, LEnds, SnapBeats: array of integer;
+  Spans: array of TLongqSpan;
+  Plan: TLongqBackPlan;
   function BeatDAt(Time: real): integer;
   begin
     Result := Floor(-0.5 + GetMidBeat(Time - (LyricsState.StartTime + Ini.MicDelay) / 1000));
@@ -1553,50 +1582,77 @@ begin
 
   OldBeatD := LyricsState.CurrentBeatD;
   NewBeatD := BeatDAt(NewPosition);
+  Plan.Reset := false;
 
   if NewPosition < AudioPlayback.Position then
   begin
-    // backward: land on the start of the line we seek into and restore the scores from that moment
-    LineBeat := Low(integer);
-    for L := 0 to CurrentSong.Tracks[0].High do
-      if Floor(GetMidBeat(NewPosition - LyricsState.StartTime / 1000)) >= CurrentSong.Tracks[0].Lines[L].StartBeat then
-        LineBeat := CurrentSong.Tracks[0].Lines[L].StartBeat;
-    K := High(SeekSnaps);
-    while (K >= 0) and (SeekSnaps[K].Beat > LineBeat) do
-      Dec(K);
-  end
-  else
-    K := -1;
-
-  if (NewPosition < AudioPlayback.Position) and (K >= 0) then
-  begin
-    for i1 := 0 to High(Player) do
-      if i1 <= High(SeekSnaps[K].Score) then
-        with Player[i1] do
-        begin
-          Score := SeekSnaps[K].Score[i1];
-          ScoreLine := SeekSnaps[K].ScoreLine[i1];
-          ScoreGolden := SeekSnaps[K].ScoreGolden[i1];
-          ScoreLast := SeekSnaps[K].ScoreLast[i1];
-          LastSentencePerfect := false;
-        end;
-    for T := 0 to 1 do
+    // backward (ULongqSeekMath): land on the start of the line we seek into (or on the target in a gap) and
+    // restore the score of that moment; a part jumped over by a forward seek stays skipped (finding 8293)
+    SetLength(LStarts, CurrentSong.Tracks[0].High + 1);
+    SetLength(LEnds, Length(LStarts));
+    for L := 0 to High(LStarts) do
     begin
-      SeekSkippedValue[T] := SeekSnaps[K].SkipValue[T];
-      SeekSkippedLines[T] := SeekSnaps[K].SkipLines[T];
-      SeekLineSkipped[T] := Copy(SeekSnaps[K].LineSkipped[T], 0, Length(SeekSnaps[K].LineSkipped[T]));
+      LStarts[L] := CurrentSong.Tracks[0].Lines[L].StartBeat;
+      LEnds[L] := LStarts[L];
+      for N := 0 to High(CurrentSong.Tracks[0].Lines[L].Notes) do
+        with CurrentSong.Tracks[0].Lines[L].Notes[N] do
+          LEnds[L] := Max(LEnds[L], StartBeat + Duration);
     end;
-    LongqGoldenRestore(SeekSnaps[K].Gold);
-    for i1 := 0 to High(Player) do // longq: skipped-notes cap follows the restored skip state
-    begin
-      T := Min(1, i1 mod 2);
-      if (not CurrentSong.isDuet) or (PlayersPlay = 1) then T := 0;
-      Player[i1].LongqSkipped := SeekSkippedValue[T] > 0;
-      Player[i1].Score := Player[i1].Score; // re-run UpdateIntScores
-    end;
-    NewPosition := Max(0, GetTimeFromBeat(SeekSnaps[K].Beat) - 0.001);
+    SetLength(Spans, 0);
+    for T := 0 to High(CurrentSong.Tracks) do
+      for L := 0 to High(CurrentSong.Tracks[T].Lines) do
+        for N := 0 to High(CurrentSong.Tracks[T].Lines[L].Notes) do
+          with CurrentSong.Tracks[T].Lines[L].Notes[N] do
+            if (NoteType <> ntFreestyle) and (Duration > 0) then
+            begin
+              SetLength(Spans, Length(Spans) + 1);
+              Spans[High(Spans)].A := StartBeat; Spans[High(Spans)].B := StartBeat + Duration;
+            end;
+    SetLength(SnapBeats, Length(SeekSnaps));
+    for K := 0 to High(SeekSnaps) do
+      SnapBeats[K] := SeekSnaps[K].Beat;
+    Plan := LongqPlanBack(LStarts, LEnds, Spans, SnapBeats,
+      Floor(GetMidBeat(NewPosition - LyricsState.StartTime / 1000)), Max(OldBeatD, LyricsState.CurrentBeat));
+    LongqLastBackPlan := Plan;
+    K := Plan.Snap;
+    if not Plan.LandExact then
+      NewPosition := Max(0, GetTimeFromBeat(Plan.Land) - 0.001);
     NewBeatD := BeatDAt(NewPosition);
-    SetLength(SeekSnaps, K); // the line start re-records itself when it is reached again
+  end;
+
+  if (NewPosition < AudioPlayback.Position) and not Plan.Reset then
+  begin
+    if K >= 0 then
+    begin
+      for i1 := 0 to High(Player) do
+        if i1 <= High(SeekSnaps[K].Score) then
+          with Player[i1] do
+          begin
+            Score := SeekSnaps[K].Score[i1];
+            ScoreLine := SeekSnaps[K].ScoreLine[i1];
+            ScoreGolden := SeekSnaps[K].ScoreGolden[i1];
+            ScoreLast := SeekSnaps[K].ScoreLast[i1];
+          end;
+      for T := 0 to 1 do
+      begin
+        SeekSkippedValue[T] := SeekSnaps[K].SkipValue[T];
+        SeekSkippedLines[T] := SeekSnaps[K].SkipLines[T];
+        SeekLineSkipped[T] := Copy(SeekSnaps[K].LineSkipped[T], 0, Length(SeekSnaps[K].LineSkipped[T]));
+      end;
+      LongqGoldenRestore(SeekSnaps[K].Gold);
+      for i1 := 0 to High(Player) do // longq: skipped-notes cap follows the restored skip state
+      begin
+        T := Min(1, i1 mod 2);
+        if (not CurrentSong.isDuet) or (PlayersPlay = 1) then T := 0;
+        Player[i1].LongqSkipped := SeekSkippedValue[T] > 0;
+        Player[i1].Score := Player[i1].Score; // re-run UpdateIntScores
+      end;
+      if Plan.MarkTo > Plan.MarkFrom then
+        SeekMarkSkipped(Plan.MarkFrom, Plan.MarkTo);
+    end;
+    for i1 := 0 to High(Player) do
+      Player[i1].LastSentencePerfect := false;
+    SetLength(SeekSnaps, Plan.Keep); // later snapshots re-record themselves when their line is reached again
     Scores.KillAllPopUps;
     Scores.ClearPlayers;
     for i1 := 0 to PlayersPlay - 1 do
@@ -1634,7 +1690,12 @@ begin
     SeekMarkSkipped(Low(integer) div 2, NewBeatD);
   end
   else
+  begin
+    // longq: remember the score at the seek point, so a later rewind into the jumped-over part restores it
+    // and keeps that part skipped (finding 8293: it fell back to the last line start actually played)
+    SeekSnapshot(OldBeatD + 1);
     SeekMarkSkipped(OldBeatD + 1, NewBeatD);
+  end;
 
   AudioPlayback.SetPosition(NewPosition);
   LyricsState.SetCurrentTime(NewPosition);

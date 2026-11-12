@@ -354,6 +354,26 @@ begin
   LogScore('after ' + Name);
 end;
 
+{ independent of ULongqSeekMath: start of the track-0 line holding time T, or T when it is in a gap / before line 1 }
+function BackLanding(T: real): real;
+var
+  L, N, Beat, LastEnd: integer;
+begin
+  Result := T;
+  Beat := Floor(GetMidBeat(T - LyricsState.StartTime / 1000));
+  for L := System.High(CurrentSong.Tracks[0].Lines) downto 0 do
+    if Beat >= CurrentSong.Tracks[0].Lines[L].StartBeat then
+    begin
+      LastEnd := CurrentSong.Tracks[0].Lines[L].StartBeat;
+      for N := 0 to System.High(CurrentSong.Tracks[0].Lines[L].Notes) do
+        with CurrentSong.Tracks[0].Lines[L].Notes[N] do
+          LastEnd := Max(LastEnd, StartBeat + Duration);
+      if Beat < LastEnd then
+        Result := GetTimeFromBeat(CurrentSong.Tracks[0].Lines[L].StartBeat);
+      Exit;
+    end;
+end;
+
 { seek keys: 0..3 = keys 1..4 from here, 4 = key 1 near the start (clamp 0), 5 = key 4 near the end }
 procedure NumKeyCheck(Which: integer);
 const
@@ -379,6 +399,10 @@ begin
   Want := Before + Deltas[K];
   if Want < 0 then Want := 0;
   if Want > Len - 1 then Want := Len - 1;
+  // backward keys land on the start of the line the target falls in (gap: the target itself), never on an
+  // older line that was played before a forward seek (finding 8293)
+  if Deltas[K] < 0 then
+    Want := BackLanding(Want);
   Key(Keys[K], Format('key %d (%.0f s)', [K + 1, Deltas[K]]));
   After := AudioPlayback.Position;
   // the current lyric line must be the one at the new time

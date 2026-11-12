@@ -269,6 +269,7 @@ type
       procedure SelectNextListRow;
       procedure SelectPrevListRow;
       procedure SkipTo(Target: cardinal; TargetInteraction: integer = -1; VS: integer = -1);
+      procedure LongqSkipSongs(Count: integer); // longq: Shift+Left/Right jumps
       procedure FixSelected; //Show Wrong Song when Tabs on Fix
       procedure FixSelected2; //Show Wrong Song when Tabs on Fix
       procedure ShowCatTL(Cat: integer);// Show Cat in Top left
@@ -387,7 +388,11 @@ begin
     Result := false;
 end;
 
+const
+  LONGQ_SONG_JUMP = 10; // longq: songs per Shift+Left/Right
+
 //Show Wrong Song when Tabs on Fix
+
 procedure TScreenSong.FixSelected;
 var
   I2: integer;
@@ -1381,7 +1386,9 @@ begin
         begin
           LastSelectTime := SDL_GetTicks;
 
-          if (TSongMenuMode(Ini.SongMenu) = smList) then
+          if (SDL_ModState in [KMOD_LSHIFT, KMOD_RSHIFT, KMOD_LSHIFT or KMOD_RSHIFT]) then
+            LongqSkipSongs(LONGQ_SONG_JUMP) // longq (operator 2026-11-12): Shift+Right = 10 songs on
+          else if (TSongMenuMode(Ini.SongMenu) = smList) then
             ParseInputNextVertical(PressedKey, CharCode, PressedDown)
           else
             ParseInputNextHorizontal(PressedKey, CharCode, PressedDown);
@@ -1391,7 +1398,9 @@ begin
         begin
           LastSelectTime := SDL_GetTicks;
 
-          if (TSongMenuMode(Ini.SongMenu) = smList) then
+          if (SDL_ModState in [KMOD_LSHIFT, KMOD_RSHIFT, KMOD_LSHIFT or KMOD_RSHIFT]) then
+            LongqSkipSongs(-LONGQ_SONG_JUMP) // longq: Shift+Left = 10 songs back
+          else if (TSongMenuMode(Ini.SongMenu) = smList) then
             ParseInputPrevVertical(PressedKey, CharCode, PressedDown)
           else
             ParseInputPrevHorizontal(PressedKey, CharCode, PressedDown);
@@ -3848,6 +3857,29 @@ begin
   PreviewOpened := -1;
   StartMusicPreview();
   StartVideoPreview();
+end;
+
+{ longq (operator 2026-11-12): Shift+Right / Shift+Left move 10 songs (wraps like single steps in Roulette and
+  the other carousels, stops at the ends in Chessboard/List). Same path as 10 single presses, so the carousel
+  scrolls there and the preview/lyric-version state follows. }
+procedure TScreenSong.LongqSkipSongs(Count: integer);
+var
+  i: integer;
+begin
+  if not FreeListMode or (Songs.SongList.Count = 0) or (CatSongs.VisibleSongs = 0) then
+    Exit;
+  CloseMessage();
+  for i := 1 to Abs(Count) do
+    if TSongMenuMode(Ini.SongMenu) = smList then
+    begin
+      if Count > 0 then SelectNextListRow else SelectPrevListRow;
+    end
+    else if Count > 0 then
+      SelectNext(false)
+    else
+      SelectPrev;
+  AudioPlayback.PlaySound(SoundLib.Change);
+  SetScrollRefresh;
 end;
 
 procedure TScreenSong.SkipTo(Target: cardinal; TargetInteraction: integer = -1; VS: integer = -1);
