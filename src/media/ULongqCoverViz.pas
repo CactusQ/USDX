@@ -124,6 +124,9 @@ type
     Template, PrevTemplate: integer;
     FadeStart: cardinal;
     Decided, Forced: boolean;
+    CycleSet: array[0..3] of integer; // longq 11-12: mood set the look cycles through
+    CycleIdx: integer;
+    LastCycle: cardinal;
     DecidedFull: boolean; // mood decided on the finished whole-song analysis
     Serious: boolean;
     Bpm: single;
@@ -1487,7 +1490,7 @@ const
 var
   Score, MoodBpm: single;
   G: string;
-  Old: integer;
+  Old, I: integer;
 begin
   Decided := true;
   DecidedFull := Ana.Done;
@@ -1524,12 +1527,15 @@ begin
   if Forced then
     Exit;
   Old := Template;
+  CycleIdx := Trunc(Seed * 4) mod 4;
   if Ana.DriveReady and (Ana.SongEnergy >= SONG_HYPE) then
-    Template := HypeSet[Trunc(Seed * 4) mod 4]
+    for I := 0 to 3 do CycleSet[I] := HypeSet[I]
   else if Serious then
-    Template := CalmSet[Trunc(Seed * 4) mod 4]
+    for I := 0 to 3 do CycleSet[I] := CalmSet[I]
   else
-    Template := MidSet[Trunc(Seed * 4) mod 4];
+    for I := 0 to 3 do CycleSet[I] := MidSet[I];
+  Template := CycleSet[CycleIdx];
+  LastCycle := SDL_GetTicks;
   if Template <> Old then
   begin
     PrevTemplate := Old;
@@ -1657,8 +1663,12 @@ begin
   glDrawArrays(GL_TRIANGLES, 0, 3);
 end;
 
+const
+  LCV_CYCLE_MS = 20000; // longq 11-12: projectM-style auto look change every 20 s
+
 procedure TLcvVideo.GetFrame(Time: Extended);
 var
+  I: integer;
   T: real;
   Fade: single;
   DepthWas, BlendWas: boolean;
@@ -1670,6 +1680,22 @@ begin
     DecideMood
   else if Decided and not DecidedFull and Ana.Done then
     DecideMood; // first pick used a partial analysis (slow machine): settle it once, same seed
+
+  // longq 11-12 (operator "cycle through the different visuals by default, every 10-30 s, whatever is normal"):
+  // every LCV_CYCLE_MS the look crossfades to the next distinct one of the song's mood set; Ctrl+Tab pins a look
+  if Decided and not Forced and (PrevTemplate < 0) and (SDL_GetTicks - LastCycle >= LCV_CYCLE_MS) then
+  begin
+    LastCycle := SDL_GetTicks;
+    for I := 1 to 3 do
+      if CycleSet[(CycleIdx + I) mod 4] <> Template then
+      begin
+        CycleIdx := (CycleIdx + I) mod 4;
+        PrevTemplate := Template;
+        FadeStart := SDL_GetTicks;
+        Template := CycleSet[CycleIdx];
+        Break;
+      end;
+  end;
 
   UpdateAudio(T);
   DepthWas := Renderer.DepthTest;
