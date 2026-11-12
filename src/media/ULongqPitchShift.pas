@@ -17,6 +17,9 @@ unit ULongqPitchShift;
 {$IFDEF FPC}
   {$MODE OBJFPC}{$H+}
 {$ENDIF}
+// audio-thread DSP: the game builds with -Ciro; range/overflow checks made this unit 5x slower
+// (25 % vs 5 % of a core, 2026-11-12 night test: 49-171 late callbacks at +3 vs 3-6 at 0)
+{$R-}{$Q-}
 
 interface
 

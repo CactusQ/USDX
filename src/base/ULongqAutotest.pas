@@ -568,6 +568,9 @@ begin
               IVisualizer[Ini.VisualizerOption]]));
          AutotestLog(Format('AUDIO callbacks %d, late (underrun) %d, slowest %.2f ms of a %.2f ms budget',
            [LongqAudioCallbacks, LongqAudioLate, LongqAudioMaxUs / 1000, LongqAudioBudgetUs / 1000]));
+         if LongqPSCalls > 0 then
+           AutotestLog(Format('TRANSPOSE shifter %d calls, %d frames, %.1f ms total, max %.2f ms, resets %d, flushes %d',
+             [LongqPSCalls, LongqPSFrames, LongqPSUs / 1000, LongqPSMaxUs / 1000, LongqPSResets, LongqPSFlushes]));
          if LongqCoverVizReport <> '' then
            AutotestLog('VIZ ' + LongqCoverVizReport);
          AutotestLog('finished, quitting');

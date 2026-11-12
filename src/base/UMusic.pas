@@ -670,6 +670,9 @@ var
   LongqAudioBudgetUs: int64 = 0;    // audio length per callback, microseconds
   // longq transpose: semitones (-6..+6) for the song streams; set by the sing screen, 0 elsewhere
   LongqTransposeSemis: integer = 0;
+  // longq transpose profiling (autotest): shifter time, calls, frames, resets, flushes
+  LongqPSUs: int64 = 0; LongqPSMaxUs: int64 = 0; LongqPSCalls: int64 = 0; LongqPSFrames: int64 = 0;
+  LongqPSResets: int64 = 0; LongqPSFlushes: int64 = 0;
 
 procedure InitializeSound;
 procedure InitializeVideo;

@@ -572,6 +572,7 @@ end;
 procedure TGenericPlaybackStream.FlushBuffers();
 begin
   ShifterFlush := true;
+  Inc(LongqPSFlushes);
   SampleBufferCount := 0;
   SampleBufferPos := 0;
   SourceBufferCount := 0;
@@ -593,6 +594,7 @@ var
   FillCount: integer;  // number of bytes to fill with padding data
   CopyCount: integer;
   PadFrame: PByteArray;
+  PST0, PSUs: int64;
 begin
   Result := -1;
 
@@ -745,11 +747,18 @@ begin
       begin
         if not assigned(Shifter) then
           Shifter := TLongqPitchShifter.Create(Round(OutputFormatInfo.SampleRate), OutputFormatInfo.Channels);
+        PST0 := SDL_GetPerformanceCounter;
         if ShifterFlush or not ShifterActive then
+        begin
           Shifter.Reset;
+          Inc(LongqPSResets);
+        end;
         ShifterFlush := false;
         Shifter.SetSemitones(LongqTransposeSemis);
         Shifter.ProcessS16(PSmallInt(@SampleBuffer[SampleBufferCount]), ConversionOutputCount div OutputFrameSize);
+        PSUs := (SDL_GetPerformanceCounter - PST0) * 1000000 div SDL_GetPerformanceFrequency;
+        Inc(LongqPSUs, PSUs); Inc(LongqPSCalls); Inc(LongqPSFrames, ConversionOutputCount div OutputFrameSize);
+        if PSUs > LongqPSMaxUs then LongqPSMaxUs := PSUs;
         ShifterActive := true;
       end
       else if (ConversionOutputCount > 0) then
