@@ -9,6 +9,10 @@
  * box (85 units) cannot hold three rows at stock size, so it grows only into the strip the note
  * lanes of the current player count never use (MaxExt); if that is not enough the gaps, then the
  * romaji, then (last) the whole stack get smaller until it fits.
+ *
+ * Operator 2026-11-12 ("romaji for both the top and second line, maybe just a tad smaller ... so it
+ * still scales well for 4 people"): the next line gets its own romaji row too, LQ_READ2_REL of the
+ * current-line romaji. Stack = L1, R1, L2, R2 (Below) or R1, L1, R2, L2 (Above), even gaps.
  *}
 unit ULongqReadingLayout;
 
@@ -32,6 +36,7 @@ const
   LQ_READ_MIN     = 0.75; // smallest romaji size relative to the lyric
   LQ_SCALE_MIN    = 0.75; // smallest overall stack scale (only when the box is boxed in)
   LQ_NOTE_MARGIN  = 4;    // units kept free between the note lanes and the grown box
+  LQ_READ2_REL    = 0.88; // next-line romaji relative to the current-line romaji ("a tad smaller")
 
 type
   TLongqReadStack = record
@@ -44,6 +49,8 @@ type
     UpperTop:       real; // font cell top of the current line
     LowerTop:       real; // font cell top of the next line
     ReadTop:        real; // font cell top of the romaji line
+    Read2Size:      real; // next-line romaji font size (0 = no next-line romaji row)
+    Read2Top:       real; // font cell top of the next-line romaji row
     InkTop, InkBot: real; // ink span of the whole stack
   end;
 
@@ -51,7 +58,11 @@ type
   SlotH = stock lyric slot height (font = 0.9 x SlotH). MaxExt = how far the box may grow;
   GrowDown = the box grows downwards (duet P1 bar at the top of the screen), else upwards. }
 function LongqReadingStack(BoxY, BoxH, SlotH: real; Mode: integer; ReadScale, MaxExt: real;
-  GrowDown: boolean): TLongqReadStack;
+  GrowDown: boolean; NextReading: boolean = true): TLongqReadStack;
+
+{ top of the next line's romaji row relative to that line's slot Y, from the current line's
+  ReadOffset (same slot geometry) and the current-line romaji font size }
+function LongqRead2Offset(ReadOffset, ReadSize: real; Mode: integer): real;
 
 { lowest y (800x600 theme units) the note lanes of a player count can reach, grid lines included }
 function LongqNotesBottom(PlayersPlay: integer): real;
@@ -67,16 +78,28 @@ implementation
 uses
   Math;
 
-function StackSpan(Mode: integer; S, R, G: real): real;
+function StackSpan(Mode: integer; S, R, G: real; Two: boolean): real;
 begin
-  // L1 + romaji + L2 (or romaji + L1 + L2): ink heights plus two gaps
+  // L1 + romaji + L2 (or romaji + L1 + L2): ink heights plus two gaps; Two: + next-line romaji + gap
   Result := 2 * S * (LQ_LINE_INK_BOT - LQ_LINE_INK_TOP) + R * (LQ_READ_INK_BOT - LQ_READ_INK_TOP) + 2 * G;
+  if Two then
+    Result := Result + R * LQ_READ2_REL * (LQ_READ_INK_BOT - LQ_READ_INK_TOP) + G;
+end;
+
+function LongqRead2Offset(ReadOffset, ReadSize: real; Mode: integer): real;
+begin
+  // Below: same ink top under its line, so the cell top moves by the smaller ink-top inset;
+  // Above: same ink bottom over its line
+  if Mode = 1 then
+    Result := ReadOffset + ReadSize * (1 - LQ_READ2_REL) * LQ_READ_INK_BOT
+  else
+    Result := ReadOffset + ReadSize * (1 - LQ_READ2_REL) * LQ_READ_INK_TOP;
 end;
 
 function LongqReadingStack(BoxY, BoxH, SlotH: real; Mode: integer; ReadScale, MaxExt: real;
-  GrowDown: boolean): TLongqReadStack;
+  GrowDown: boolean; NextReading: boolean): TLongqReadStack;
 var
-  S0, S, K, R, G, Pad, Need, Ext, Y: real;
+  S0, S, K, R, G, Pad, Need, Ext, Y, R2: real;
   Guard: integer;
 begin
   S0 := 0.9 * SlotH;
@@ -89,7 +112,7 @@ begin
   Guard := 0;
   repeat
     S := S0 * K;
-    Need := StackSpan(Mode, S, S * R, S * G) + 2 * S * Pad;
+    Need := StackSpan(Mode, S, S * R, S * G, NextReading) + 2 * S * Pad;
     if Need <= BoxH + MaxExt + 0.001 then
       Break;
     // shrink in stages so no single knob collapses first: gaps a bit, romaji a bit, padding,
@@ -134,8 +157,13 @@ begin
   Result.BoxH := BoxH + Ext;
 
   // centre the ink span in the (grown) box
-  Result.InkTop := Result.BoxY + (Result.BoxH - StackSpan(Mode, S, S * R, S * G)) / 2;
-  Result.InkBot := Result.InkTop + StackSpan(Mode, S, S * R, S * G);
+  Result.InkTop := Result.BoxY + (Result.BoxH - StackSpan(Mode, S, S * R, S * G, NextReading)) / 2;
+  Result.InkBot := Result.InkTop + StackSpan(Mode, S, S * R, S * G, NextReading);
+  R2 := 0;
+  if NextReading then
+    R2 := Result.ReadSize * LQ_READ2_REL;
+  Result.Read2Size := R2;
+  Result.Read2Top := 0;
   Y := Result.InkTop;
   if Mode = 1 then
   begin
@@ -143,6 +171,11 @@ begin
     Y := Y + Result.ReadSize * (LQ_READ_INK_BOT - LQ_READ_INK_TOP) + Result.Gap;
     Result.UpperTop := Y - S * LQ_LINE_INK_TOP;
     Y := Y + S * (LQ_LINE_INK_BOT - LQ_LINE_INK_TOP) + Result.Gap;
+    if NextReading then
+    begin
+      Result.Read2Top := Y - R2 * LQ_READ_INK_TOP;
+      Y := Y + R2 * (LQ_READ_INK_BOT - LQ_READ_INK_TOP) + Result.Gap;
+    end;
     Result.LowerTop := Y - S * LQ_LINE_INK_TOP;
   end
   else
@@ -152,6 +185,11 @@ begin
     Result.ReadTop := Y - Result.ReadSize * LQ_READ_INK_TOP;
     Y := Y + Result.ReadSize * (LQ_READ_INK_BOT - LQ_READ_INK_TOP) + Result.Gap;
     Result.LowerTop := Y - S * LQ_LINE_INK_TOP;
+    if NextReading then
+    begin
+      Y := Y + S * (LQ_LINE_INK_BOT - LQ_LINE_INK_TOP) + Result.Gap;
+      Result.Read2Top := Y - R2 * LQ_READ_INK_TOP;
+    end;
   end;
 end;
 

@@ -193,6 +193,7 @@ uses
   UGraphic,
   UDisplay,
   ULog,
+  ULongqReadingLayout,
   math;
 
 { TLyricLine }
@@ -1021,6 +1022,11 @@ begin
   if Line.HasReading2 and (Line = UpperLine) then
     DrawAnnotations(Line, LyricX, IfThen(ReadOffset <> 0, ReadingY, LyricY + Line.Height * 0.92), Alpha, Beat >= Line.StartNote, Line = UpperLine,
                     LyricsEffect, OutlineColor_en, 2);
+  // longq 2026-11-12: the next line's romaji row too (a tad smaller, next-line colour), only with the
+  // stack layout (ReadOffset set by the sing screen) and the plain romaji row (not furigana)
+  if Line.HasReading and (Line = LowerLine) and (ReadOffset <> 0) and not FuriganaMode then
+    DrawAnnotations(Line, LyricX, Y + LongqRead2Offset(ReadOffset, Line.ReadingHeight, ReadingMode),
+                    Alpha, false, false, LyricsEffect, OutlineColor_dis, 3);
 
   // reset
   SetOutlineColor(0,0,0,-1);
@@ -1071,6 +1077,8 @@ begin
   SetFontItalic(false);
   if Row = 2 then
     SetFontSize(Line.Height * ReadingScale * Line.Annot2Scale)
+  else if Row = 3 then
+    SetFontSize(Line.ReadingHeight * Line.AnnotScale * LQ_READ2_REL)
   else
     SetFontSize(Line.ReadingHeight * Line.AnnotScale);
   if ReadingDim then
@@ -1091,6 +1099,9 @@ begin
       else
       begin
         T := Annot; TL := AnnotL;
+        // row 3 (next-line romaji): the centred row scaled about the line centre
+        if Row = 3 then
+          TL := Line.Width / 2 + (AnnotL - Line.Width / 2) * LQ_READ2_REL;
       end;
       if T = '' then
         Continue;
