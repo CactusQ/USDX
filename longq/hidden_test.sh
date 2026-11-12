@@ -40,6 +40,9 @@ for sec, k, v in [("Directories", "SongDir1", ""), ("Sound", "BackgroundMusic", 
                   ("Sound", "PreviewVolume", "0"), ("Game", "Tabs", "Off"), ("Graphics", "FullScreen", "Off")]:
     t = put(t, sec, k, v)
 if os.environ.get("VIS"): t = put(t, "Graphics", "Visualization", os.environ["VIS"])
+# the player screen saves [Game] Players before ScreenSing is built; without it 4 players on a Players=3 config
+# died with ERangeError in TScreenSingController.Create (2026-11-12 night)
+if os.environ.get("LONGQ_AUTOTEST_PLAYERS"): t = put(t, "Game", "Players", os.environ["LONGQ_AUTOTEST_PLAYERS"])
 if os.environ.get("SONGMENU"): t = put(t, "Game", "SongMenu", os.environ["SONGMENU"])  # Roulette/Chessboard/List
 open(dst, "w", encoding="utf-8").write(t)
 PY
