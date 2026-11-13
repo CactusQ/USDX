@@ -143,7 +143,11 @@ type
 implementation
 
 uses
-  ULog;
+  ULog,
+  ULongqPrefetch;
+
+var
+  LongqPrefetchNext: boolean = false;
 
 constructor TAudioPlaybackBase.Create();
 begin
@@ -199,7 +203,14 @@ begin
   FreeAndNil(KaraokeMusicStream);
   CurrentFileName := Filename.ToNative;
 
-  MusicStream := OpenStream(Filename);
+  LongqPrefetchNext := true;
+  try
+    MusicStream := OpenStream(Filename);
+    if assigned(FilenameKaraoke) and assigned(MusicStream) then
+      KaraokeMusicStream := OpenStream(FilenameKaraoke);
+  finally
+    LongqPrefetchNext := false;
+  end;
   if not assigned(MusicStream) then
   begin
     Result := false;
@@ -208,9 +219,6 @@ begin
   if (Ini.ReplayGain = 1) then
     MusicStream.ReplayGainEnabled := true;
   MusicStream.LongqTransposable := true;
-
-  if assigned(FilenameKaraoke) then
-    KaraokeMusicStream := OpenStream(FilenameKaraoke);
 
   if assigned(KaraokeMusicStream) then
   begin
@@ -288,6 +296,7 @@ function TAudioPlaybackBase.OpenStream(const Filename: IPath): TAudioPlaybackStr
 var
   PlaybackStream: TAudioPlaybackStream;
   DecodeStream: TAudioDecodeStream;
+  SourceStream: TAudioSourceStream;
 begin
   Result := nil;
 
@@ -302,10 +311,15 @@ begin
 
   // create a matching playback-stream for the decoder
   PlaybackStream := CreatePlaybackStream();
-  if (not PlaybackStream.Open(DecodeStream)) then
+  // longq (usdx-backfill-1113): song audio (music + karaoke/vocals stems) is decoded ahead in its own thread
+  if LongqPrefetchNext then
+    SourceStream := LongqWrapPrefetch(DecodeStream)
+  else
+    SourceStream := DecodeStream;
+  if (not PlaybackStream.Open(SourceStream)) then
   begin
     FreeAndNil(PlaybackStream);
-    FreeAndNil(DecodeStream);
+    FreeAndNil(SourceStream);
     Exit;
   end;
 

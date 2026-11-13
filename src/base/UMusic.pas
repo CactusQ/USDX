@@ -287,7 +287,7 @@ type
     public
       constructor Create();
       function ReadData(Buffer: PByte; BufferSize: integer): integer; virtual; abstract;
-      function GetReplayGain(): single;
+      function GetReplayGain(): single; virtual; // longq: virtual so ULongqPrefetch can forward it
 
       property EOF: boolean read IsEOF;
       property Error: boolean read IsError;

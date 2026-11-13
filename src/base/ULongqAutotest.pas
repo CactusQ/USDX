@@ -56,6 +56,7 @@ uses
   UIni,
   ULog,
   UMusic,
+  ULongqPrefetch,
   UNote,
   UScreenSingController,
   UThemes,
@@ -590,8 +591,8 @@ begin
            AutotestLog(Format('FPS avg %.1f over %.1f s (%d frames), worst frame %d ms, visualizer option=%s',
              [Frames * 1000 / (Now - FrameT0), (Now - FrameT0) / 1000, Frames, FrameWorst,
               IVisualizer[Ini.VisualizerOption]]));
-         AutotestLog(Format('AUDIO callbacks %d, late (underrun) %d, slowest %.2f ms of a %.2f ms budget',
-           [LongqAudioCallbacks, LongqAudioLate, LongqAudioMaxUs / 1000, LongqAudioBudgetUs / 1000]));
+         AutotestLog(Format('AUDIO callbacks %d, late (underrun) %d, slowest %.2f ms of a %.2f ms budget, prefetch empty %d',
+           [LongqAudioCallbacks, LongqAudioLate, LongqAudioMaxUs / 1000, LongqAudioBudgetUs / 1000, LongqPrefetchEmpty]));
          if LongqPSCalls > 0 then
            AutotestLog(Format('TRANSPOSE shifter %d calls, %d frames, %.1f ms total, max %.2f ms, resets %d, flushes %d',
              [LongqPSCalls, LongqPSFrames, LongqPSUs / 1000, LongqPSMaxUs / 1000, LongqPSResets, LongqPSFlushes]));

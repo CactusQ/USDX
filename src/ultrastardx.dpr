@@ -259,6 +259,7 @@ uses
 
   UMusic                    in 'base\UMusic.pas',
   UAudioPlaybackBase        in 'media\UAudioPlaybackBase.pas',
+  ULongqPrefetch            in 'media\ULongqPrefetch.pas',
 {$IF Defined(UsePortaudioPlayback) or Defined(UseSDLPlayback)}
   UFFT                      in 'lib\fft\UFFT.pas',
   UAudioPlayback_SoftMixer  in 'media\UAudioPlayback_SoftMixer.pas',
