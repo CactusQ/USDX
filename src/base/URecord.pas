@@ -918,8 +918,26 @@ begin
   end;
 end;
 
+// longq (operator 2026-11-08: "disable iphone mic as an audio interface or options"): Continuity Camera /
+// iPhone / iPad microphones are never probed, so they are never opened (opening one wakes the phone), never
+// listed in Options > Record and never auto-assigned. Set LONGQ_ALLOW_IPHONE_MIC=1 to get them back.
+function LongqIsPhoneMic(const name: UTF8String): boolean;
+var
+  L: UTF8String;
+begin
+  L := LowerCase(name);
+  Result := ((Pos('iphone', L) > 0) or (Pos('ipad', L) > 0) or (Pos('continuity', L) > 0))
+    and (GetEnvironmentVariable('LONGQ_ALLOW_IPHONE_MIC') <> '1');
+end;
+
 function TAudioInputBase.ShouldProbeDevice(const name: UTF8String): boolean;
 begin
+  if LongqIsPhoneMic(name) then
+  begin
+    Log.LogStatus('longq: skipping phone microphone "' + name + '"', 'TAudioInputBase.ShouldProbeDevice');
+    Result := false;
+    Exit;
+  end;
   Result := (ScanMode = aimFull) or IsDeviceAssigned(name);
 end;
 
