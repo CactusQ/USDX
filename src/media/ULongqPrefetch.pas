@@ -36,7 +36,7 @@ type
       fCond: PSDL_Cond;
       fThread: PSDL_Thread;
       fTerminate: boolean;
-      fRing: PByteArray;
+      fRing: PByte;             // plain pointer: PByteArray is capped at 32 KB and range-checks (ERangeError 11-14 night)
       fRingSize, fRingRead, fRingFill: integer;
       fPosEnd: double;          // fInner position right after the newest ring byte
       fInnerEOF: boolean;
@@ -162,9 +162,9 @@ begin
   WPos := (fRingRead + fRingFill) mod fRingSize;
   First := fRingSize - WPos;
   if First > Count then First := Count;
-  Move(Src^, fRing[WPos], First);
+  Move(Src^, PByte(PtrUInt(fRing) + PtrUInt(WPos))^, First);
   if Count > First then
-    Move(PByteArray(Src)[First], fRing[0], Count - First);
+    Move(PByte(PtrUInt(Src) + PtrUInt(First))^, fRing^, Count - First);
   Inc(fRingFill, Count);
 end;
 
@@ -174,9 +174,9 @@ var
 begin
   First := fRingSize - fRingRead;
   if First > Count then First := Count;
-  Move(fRing[fRingRead], Dst^, First);
+  Move(PByte(PtrUInt(fRing) + PtrUInt(fRingRead))^, Dst^, First);
   if Count > First then
-    Move(fRing[0], PByteArray(Dst)[First], Count - First);
+    Move(fRing^, PByte(PtrUInt(Dst) + PtrUInt(First))^, Count - First);
   fRingRead := (fRingRead + Count) mod fRingSize;
   Dec(fRingFill, Count);
 end;
