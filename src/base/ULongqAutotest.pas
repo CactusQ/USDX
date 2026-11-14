@@ -403,7 +403,10 @@ begin
   // backward keys land on the start of the line the target falls in (gap: the target itself), never on an
   // older line that was played before a forward seek (finding 8293)
   if Deltas[K] < 0 then
+  begin
     Want := BackLanding(Want);
+    if Want < 0 then Want := 0; // line 0 can start before the audio (lead-in); playback clamps at 0
+  end;
   Key(Keys[K], Format('key %d (%.0f s)', [K + 1, Deltas[K]]));
   After := AudioPlayback.Position;
   // the current lyric line must be the one at the new time
