@@ -23,6 +23,7 @@ interface
 {$I switches.inc}
 
 uses
+  Math,
   SysUtils,
   sdl2,
   UMusic;
@@ -188,6 +189,9 @@ var
   PosAfter: double;
   InnerEOF: boolean;
 begin
+  // same FPU mask as the SoftMixer callback: FFmpeg/swresample float->int conversions trap otherwise
+  // (EAccessViolation at fcvtzs in libswresample, 11-14 night autotest)
+  SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide, exOverflow, exUnderflow, exPrecision]);
   ChunkBytes := CHUNK_FRAMES * fFrameSize;
   GetMem(Chunk, ChunkBytes);
   try
