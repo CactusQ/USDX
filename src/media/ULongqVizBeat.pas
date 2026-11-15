@@ -107,12 +107,24 @@ const
 var
   O, O2, Sc: array of single;
   Back: array of integer;
-  MK, MS, MH, M, Sd, Best, V, Ac, BestAc, Prior, Y0, Y1, Y2, D: single;
-  I, J, L, Lmin, Lmax, BestL, W0, W1, R, Nb: integer;
+  MK, MS, MH, M, Sd, Best, V, Ac, BestAc, Prior, Y0, Y1, D: single;
+  I, J, L, Lmin, Lmax, W0, W1, R, Nb: integer;
   Acs: array of single;
   PhK, PhS: array[0..3] of single;
   PhN: array[0..3] of integer;
   PhScore: array[0..3] of single;
+
+  function AcAt(X: single): single;
+  var
+    Li: integer;
+  begin
+    Li := Trunc(X);
+    if (Li < 1) or (Li + 1 > High(Acs)) then
+      Result := 0
+    else
+      Result := Acs[Li] + (X - Li) * (Acs[Li + 1] - Acs[Li]);
+  end;
+
 begin
   Result := false;
   G.Bpm := 0; G.Period := 0; G.Down := 0; G.DownMargin := 0;
@@ -140,35 +152,39 @@ begin
   Sd := Sqrt(Sd / N) + 1e-6;
   for I := 0 to N - 1 do
     O2[I] := O2[I] / Sd;
-  // tempo: autocorrelation over 60-200 bpm, log-normal prior around 120 bpm (one octave std)
+  // tempo: autocorrelation, every beat period 60-200 bpm (quarter-row steps) scored on its harmonics
+  // (1, 2, 3, 4 beats + the half beat) x a log-normal prior around 120 bpm (one octave std). A single-lag
+  // peak picked 3:2 errors (Fergie Big Girls Don't Cry 113 -> 75, Pink Get The Party Started 129 -> 86):
+  // 13/16 songs right vs librosa, the harmonic score 16/16 (vizpunch/tempo_proto.py, 2026-11-15)
   Lmin := Round(60 / VB_HOP / 200); Lmax := Round(60 / VB_HOP / 60);
-  SetLength(Acs, Lmax + 2);
-  BestAc := -1; BestL := 0;
-  for L := Lmin - 1 to Lmax + 1 do
+  SetLength(Acs, 4 * Lmax + 3);
+  for L := 1 to High(Acs) do
   begin
     Ac := 0;
-    for I := L to N - 1 do
-      Ac := Ac + O2[I] * O2[I - L];
-    Acs[L] := Ac / (N - L);
-  end;
-  for L := Lmin to Lmax do
-  begin
-    Prior := Exp(-0.5 * Sqr(Log2((60 / VB_HOP / L) / 120)));
-    if Acs[L] * Prior > BestAc then
+    if L < N then
     begin
-      BestAc := Acs[L] * Prior;
-      BestL := L;
+      for I := L to N - 1 do
+        Ac := Ac + O2[I] * O2[I - L];
+      Ac := Ac / (N - L);
     end;
+    Acs[L] := Max(0, Ac);
   end;
-  if (BestL = 0) or (BestAc <= 0) then
+  BestAc := -1;
+  G.Period := 0;
+  Y0 := Lmin;
+  while Y0 <= Lmax do
+  begin
+    Ac := AcAt(Y0) + 0.5 * AcAt(2 * Y0) + 0.33 * AcAt(3 * Y0) + 0.25 * AcAt(4 * Y0) + 0.5 * AcAt(0.5 * Y0);
+    Prior := Exp(-0.5 * Sqr(Log2((60 / VB_HOP / Y0) / 120)));
+    if Ac * Prior > BestAc then
+    begin
+      BestAc := Ac * Prior;
+      G.Period := Y0;
+    end;
+    Y0 := Y0 + 0.25;
+  end;
+  if (G.Period <= 0) or (BestAc <= 0) then
     Exit;
-  // sub-row period: parabola through the 3 autocorrelation values
-  Y0 := Acs[BestL - 1]; Y1 := Acs[BestL]; Y2 := Acs[BestL + 1];
-  D := Y0 - 2 * Y1 + Y2;
-  if D < 0 then
-    G.Period := BestL + EnsureRange(0.5 * (Y0 - Y2) / D, -0.5, 0.5)
-  else
-    G.Period := BestL;
   G.Bpm := 60 / VB_HOP / G.Period;
   // dynamic programming: each beat = local onset score + best (previous beat score - tempo deviation cost)
   SetLength(Sc, N); SetLength(Back, N);
@@ -337,7 +353,8 @@ var
   Nb, B, I, J, Cur, Pick, Cnt, Prev, Lo, Hi: integer;
   BarL, Dif: array of single;
   Bound: array of boolean;
-  A0, A1: single;
+  A0, A1, EffBpm: single;
+  Mul: integer;
   MoodSet, Deck, Valid: TVBInts;
   Rs: cardinal;
 begin
@@ -345,11 +362,21 @@ begin
   P.Mood := Mood;
   SetLength(P.SwitchT, 0); SetLength(P.SwitchBar, 0); SetLength(P.Looks, 0);
   P.SectionSwitches := 0;
-  if G.Bpm >= 140 then begin P.BarsPerLook := 8; P.MaxBars := 12; end
-  else if G.Bpm >= 100 then begin P.BarsPerLook := 12; P.MaxBars := 16; end
+  // a grid over 150 bpm on a non-hype song is felt half time (No Woman No Cry tracks 160, felt 80; same rule as
+  // the mood pick): bars of the felt tempo, so 2 grid bars each
+  EffBpm := G.Bpm; Mul := 1;
+  if (G.Bpm > 150) and (Mood <> VB_MOOD_HYPE) then
+  begin
+    EffBpm := G.Bpm / 2;
+    Mul := 2;
+  end;
+  if EffBpm >= 140 then begin P.BarsPerLook := 8; P.MaxBars := 12; end
+  else if EffBpm >= 100 then begin P.BarsPerLook := 12; P.MaxBars := 16; end
   else begin P.BarsPerLook := 16; P.MaxBars := 24; end;
-  if G.Bpm > 0 then
-    P.Fade := EnsureRange(2 * 60 / G.Bpm, 0.6, 1.6)
+  P.BarsPerLook := P.BarsPerLook * Mul;
+  P.MaxBars := P.MaxBars * Mul;
+  if EffBpm > 0 then
+    P.Fade := EnsureRange(2 * 60 / EffBpm, 0.6, 1.6)
   else
     P.Fade := 1.5;
   Nb := Length(G.Bars);

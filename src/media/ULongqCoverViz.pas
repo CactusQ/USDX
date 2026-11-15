@@ -1261,6 +1261,9 @@ begin
     Result := Result + Format('; offscreen %dx%d: gpu ms p50 %.2f p99 %.2f max %.2f (n=%d), frame interval ms p50 %.1f p99 %.1f (n=%d)',
       [BenchW, BenchH, Pct(GpuMs, GpuN, 0.5), Pct(GpuMs, GpuN, 0.99), Pct(GpuMs, GpuN, 1.0), GpuN,
        Pct(FrameMs, FrameN, 0.5), Pct(FrameMs, FrameN, 0.99), FrameN]);
+  if Ana.PlanReady then
+    Result := Result + Format('; beat grid %.1f bpm, %d bars, %d looks every %d bars (%d on a section change), punch hits %d',
+      [Ana.Grid.Bpm, Length(Ana.Grid.Bars), Length(Ana.Plan.Looks), Ana.Plan.BarsPerLook, Ana.Plan.SectionSwitches, Ana.NumK]);
   if TplMs <> '' then
     Result := Result + '; ms per template (synchronous):' + TplMs;
 end;
@@ -1586,8 +1589,8 @@ begin
   Serious := Score < 0;
   if Ana.DriveReady then
     Serious := Ana.SongEnergy < SONG_CALM;
-  if Forced then
-    Exit;
+  if Forced or PlanOn then
+    Exit; // pinned by Ctrl+Tab, or the tempo-locked schedule already owns the look
   Old := Template;
   CycleIdx := Trunc(Seed * 4) mod 4;
   if Ana.DriveReady and (Ana.SongEnergy >= SONG_HYPE) then
