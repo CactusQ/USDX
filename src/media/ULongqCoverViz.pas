@@ -57,7 +57,8 @@ uses
   UNote,
   ULog,
   UGraphic,
-  URenderer;
+  URenderer,
+  ULongqVizBeat;
 
 const
   HOP = 0.02;            // analysis row every 20 ms
@@ -103,12 +104,20 @@ type
     SongEnergy: single;
     DriveReady: boolean;
     NumK, NumS, NumH: integer;
+    // longq 11-15 punch + tempo-locked looks (ULongqVizBeat), set once after Drive, published by PlanReady:
+    // PunchK = kick hits for the visual punch (downbeats x1.35), Level = per-row section level (pre-smoothing)
+    PunchK, Level: array of single;
+    Grid: TVBGrid;
+    Plan: TVBPlan;
+    PunchReady, PlanReady: boolean;
+    PlanSeed: cardinal;
     Count: integer;           // rows ready (published with a write barrier)
     Done: boolean;
     MeanEnergy, OnsetRate: single;
     ElapsedMs: cardinal;
     procedure ComputeDrive(N: integer);
-    constructor Create(const FileName: IPath);
+    procedure ComputePlan(N: integer);
+    constructor Create(const FileName: IPath; ASeed: cardinal);
   end;
 
   TLcvVideo = class(TInterfacedObject, IVideo)
@@ -134,9 +143,10 @@ type
     Bands: TBandRow;
     FBass, FMid, FHigh, KickV, FEnergy: single;
     // drum envelopes: Pend = strength of the last onset still rising (attack is rate-limited)
-    EnvK, EnvS, EnvH, PendK, PendS, PendH: single;
+    EnvK, EnvS, EnvH: single;
     FDrive: single;
-    LastIdx: integer;
+    Pulse: TVBPulse;      // longq 11-15: punch envelopes (ULongqVizBeat), EnvK/S/H + FDrive mirror it
+    PlanOn: boolean;      // the tempo-locked look schedule drives the looks (not Forced, plan ready)
     LastTicks: cardinal;
     Playing: boolean;
     PosSet: cardinal;
@@ -197,7 +207,7 @@ var
   Programs: array[0..LCV_NUM_TEMPLATES - 1] of GLuint;
   ULoc: array[0..LCV_NUM_TEMPLATES - 1] of record
     Res, Time, Beat, BeatN, Bass, Mid, High, Kick, Energy, Seed, Alpha, HasCover, Calm, Pal, Bands, Cover, Param: GLint;
-    Snare, Hat, Drive: GLint;
+    Snare, Hat, Drive, Gain, HatN: GLint;
   end;
   ShadersTried, ShadersOk: boolean;
   EmptyVAO: GLuint;
@@ -218,9 +228,13 @@ const
   FS_HEAD =
     '#version 150 core'#10 +
     'in vec2 vUV; out vec4 outCol;'#10 +
-    'uniform vec2 uRes; uniform float uTime, uBeat, uBeatN, uBass, uMid, uHigh, uKick, uEnergy, uSeed, uAlpha, uHasCover, uCalm;'#10 +
+    'uniform vec2 uRes; uniform float uTime, uBeat, uBeatN, uBass, uMid, uHigh, uKickIn, uEnergy, uSeed, uAlpha, uHasCover, uCalm;'#10 +
     // drum envelopes (pre-analysed onsets, fast attack ~150 ms decay) + song/section drive 0 calm .. 1 turnt
-    'uniform float uSnare, uHat, uDrive;'#10 +
+    // punch (operator 2026-11-15): uGain = per-look punch gain (calm looks 0.6), uHatN = hat hits so far
+    'uniform float uSnare, uHat, uDrive, uGain, uHatN;'#10 +
+    // uKickIn = punch envelope (0..1.35, downbeats > 1); the looks' own kick accents read uKick = a capped, 60 %
+    // copy (the global zoom below carries the hit; their old full-size brightness bumps + it made 4-5 flashes/s)
+    'float uKick;'#10 +
     'uniform vec3 uPal[5]; uniform float uBands[16]; uniform sampler2D uCover; uniform vec4 uParam;'#10 +
     'const float PI = 3.14159265;'#10 +
     'float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }'#10 +
@@ -257,21 +271,38 @@ const
     'float soft(float x){ return 1.0 - exp(-2.2 * max(x, 0.0)); }'#10 +
     'vec3 scene(vec2 uv, vec2 p);'#10 +
     'void main(){'#10 +
-    '  vec2 uv = vUV; vec2 p = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);'#10 +
+    '  float asp = uRes.x / uRes.y; vec2 uv0 = vUV; vec2 p0 = (uv0 - 0.5) * vec2(asp, 1.0);'#10 +
+    // punch (operator 2026-11-15 "pulsing with drums/beat", every look): the whole frame zooms 4-8 % toward the
+    // cover on each kick/808 (x1.35 on a bar downbeat), section drive sets where in 4-8 %, calm looks x0.6.
+    // Every look's own kick bump was folded into this one (no double zoom)
+    '  uKick = 0.6 * min(uKickIn, 1.0);'#10 +
+    '  float zm = 1.0 + min(0.08, uKickIn * (0.035 + 0.025 * uDrive) * uGain); vec2 zc = vec2(0.0, 0.08);'#10 +
+    '  vec2 p = (p0 - zc) / zm + zc; vec2 uv = p / vec2(asp, 1.0) + 0.5;'#10 +
     '  vec3 col = max(scene(uv, p), 0.0);'#10 +
-    // beat glow: exposure breathes on the kick/808, the snare adds a soft accent wash; both scale with the
-    // drive. Bounded so one hit moves the frame mean by < 0.1 relative luminance (no strobe, WCAG 2.3.1)
-    // (bright pixels get less: in linear light a x1.14 on a bright frame is a 0.1 jump)
-    '  col *= 1.0 + (0.04 + 0.10 * uDrive) * uKick * (1.0 - smoothstep(0.25, 0.7, dot(col, vec3(0.299, 0.587, 0.114))));'#10 +
-    '  col += uPal[3] * uSnare * (0.01 + 0.05 * uDrive);'#10 +
+    // exposure flash on the kick (attack 25 ms, ~150 ms decay, CPU side). Bright pixels get less, so one hit
+    // stays under a 0.1 frame-mean relative-luminance jump (no strobe, WCAG 2.3.1; checked by vizbeat_verify.py)
+    '  col *= 1.0 + (0.03 + 0.05 * uDrive) * uGain * min(uKickIn, 1.2) * (1.0 - smoothstep(0.2, 0.6, dot(col, vec3(0.299, 0.587, 0.114))));'#10 +
+    // snare/clap: accent-colour edge light + a tint toward the accent tone
+    '  float edge = smoothstep(0.3, 1.0, length(p0 * vec2(1.0 / asp, 1.0) * 2.0));'#10 +
+    // (luminance kept: the hue swings to the accent, the brightness does not, so kick + snare never strobe)
+    '  vec3 acc = vivid(uPal[3], 1.0); float lc = dot(col, vec3(0.299, 0.587, 0.114));'#10 +
+    // accent chroma on the pixel's own luma, scaled to stay inside 0..1 (a clipped tint would dim the frame)
+    '  vec3 ch = acc - dot(acc, vec3(0.299, 0.587, 0.114));'#10 +
+    '  float cs = min(lc / max(-min(min(ch.r, ch.g), ch.b), 1e-3), (1.0 - lc) / max(max(max(ch.r, ch.g), ch.b), 1e-3));'#10 +
+    '  vec3 tint = lc + ch * clamp(cs, 0.0, 1.5);'#10 +
+    '  col = mix(col, tint, min(1.0, uSnare) * uGain * (0.15 + 0.3 * edge) * (0.6 + 0.4 * uDrive));'#10 +
+    '  col += acc * min(1.0, uSnare) * uGain * (0.01 + 0.02 * uDrive) * edge;'#10 +
+    // hats: glitter sparkles at fresh random spots on every hat hit
+    '  vec2 gq = p0 * 24.0; float gh = hash(floor(gq) + vec2(mod(uHatN, 97.0) * 3.17, uSeed * 0.37));'#10 +
+    '  col += mix(vec3(1.0), uPal[4], 0.3) * star4(fract(gq) - 0.5, 0.45) * step(0.97, gh) * uHat * uGain * (0.7 + 0.9 * uDrive);'#10 +
     // brightness floor: shadows lift toward the deep palette tone, a dark cover never makes a black scene
     '  float l = dot(col, vec3(0.299, 0.587, 0.114));'#10 +
     '  col += uPal[1] * 0.3 * (1.0 - smoothstep(0.0, 0.2, l));'#10 +
     // lyric bar on the lower ~30 %: cap the luminance there (hue kept, the frame above stays bright)
-    '  float bar = smoothstep(0.34, 0.08, uv.y);'#10 +
+    '  float bar = smoothstep(0.34, 0.08, uv0.y);'#10 +
     '  l = dot(col, vec3(0.299, 0.587, 0.114));'#10 +
     '  col *= mix(1.0, min(1.0, 0.26 / max(l, 0.001)), bar) * (1.0 - 0.2 * bar);'#10 +
-    '  col *= 1.0 - 0.15 * dot(p * vec2(0.6, 1.0), p * vec2(0.6, 1.0));'#10 +
+    '  col *= 1.0 - 0.15 * dot(p0 * vec2(0.6, 1.0), p0 * vec2(0.6, 1.0));'#10 +
     '  outCol = vec4(clamp(col, 0.0, 1.0), uAlpha);'#10 +
     '}'#10;
 
@@ -293,7 +324,7 @@ const
     '  bg += uPal[3] * uSnare * (0.2 + 0.6 * uDrive) * smoothstep(0.008, 0.0, abs(r - sr));'#10 +
     '  bg += uPal[4] * uHat * uDrive * pow(noise(p * 60.0 + uTime * 2.0), 28.0) * 3.0 * exp(-r * 4.0);'#10 +
     // 808/kick bounce: gentle when calm, a real bump on drops
-    '  float s = 0.42 * (1.0 + 0.04 * uBass + (0.012 + 0.05 * uDrive) * uKick);'#10 +
+    '  float s = 0.42 * (1.0 + 0.04 * uBass);'#10 +
     '  vec2 cp = p - vec2(0.0, 0.07);'#10 +
     '  float sh = smoothstep(0.08, -0.03, sdBox(cp + vec2(0.0, 0.015), vec2(s * 0.5), 0.02));'#10 +
     '  bg *= 1.0 - 0.45 * sh;'#10 +
@@ -343,7 +374,7 @@ const
     '  float hz = 0.12;'#10 +
     '  vec3 sky = mix(uPal[1] * 0.7, uPal[2] * 0.95, smoothstep(hz, 0.6, p.y));'#10 +
     '  vec3 col = sky;'#10 +
-    '  vec2 sp = p - vec2(0.0, hz + 0.17); float sr = 0.2 * (1.0 + 0.03 * uBass + (0.01 + 0.04 * uDrive) * uKick);'#10 +
+    '  vec2 sp = p - vec2(0.0, hz + 0.17); float sr = 0.2 * (1.0 + 0.03 * uBass);'#10 +
     '  float sd = length(sp) - sr;'#10 +
     '  vec3 sun = uHasCover > 0.5 ? cover(sp / (sr * 1.42), 0.5) : mix(uPal[4], uPal[3], sp.y / sr + 0.5);'#10 +
     '  float stripes = step(0.0, sin((sp.y - uTime * 0.05) * 90.0)) + step(0.02, sp.y);'#10 +
@@ -385,9 +416,9 @@ const
     '  q = abs(fract(q * 0.9 + 0.5) - 0.5) * 2.0 - 0.5;'#10 +
     '  vec3 c = uHasCover > 0.5 ? cover(q * 0.9, 0.0) : pal(fbm(q * 3.0) + uTime * 0.05);'#10 +
     '  c = mix(grade(c), c, 0.45); c = mix(c, pal(r + uTime * 0.05), 0.18);'#10 +
-    '  c *= 0.88 + 0.25 * uBass + (0.05 + 0.2 * uDrive) * uKick;'#10 +
+    '  c *= 0.88 + 0.25 * uBass + (0.03 + 0.1 * uDrive) * uKick;'#10 +
     '  c += uPal[4] * smoothstep(0.25, 0.0, r) * (0.3 + 0.7 * uKick) * 0.5;'#10 +
-    '  c += uPal[3] * uSnare * uDrive * 0.5 * smoothstep(0.01, 0.0, abs(r - 0.15 - (1.0 - uSnare) * 0.5));'#10 +
+    '  c += uPal[3] * uSnare * uDrive * 0.25 * smoothstep(0.01, 0.0, abs(r - 0.15 - (1.0 - uSnare) * 0.5));'#10 +
     '  c += vec3(1.0) * uHigh * 0.3 * pow(noise(vec2(a * 40.0, r * 40.0 - uTime * 4.0)), 10.0) * 6.0;'#10 +
     '  return c;'#10 +
     '}'#10;
@@ -407,7 +438,7 @@ const
     '  col += vec3(1.0) * spec * (0.6 + 0.5 * uHigh);'#10 +
     '  col += uPal[3] * pow(1.0 - n.z, 3.0) * (0.4 + uMid);'#10 +
     '  col *= 0.92 + 0.12 * uBass + (0.03 + 0.06 * uDrive) * uKick;'#10 +
-    '  vec4 c = coverCard(p - vec2(0.0, 0.08), 0.24 * (1.0 + 0.03 * uBass + (0.01 + 0.04 * uDrive) * uKick), 0.5);'#10 +
+    '  vec4 c = coverCard(p - vec2(0.0, 0.08), 0.24 * (1.0 + 0.03 * uBass), 0.5);'#10 +
     '  col = mix(col, c.rgb, c.a * 0.92 * uHasCover);'#10 +
     '  return col;'#10 +
     '}'#10;
@@ -499,7 +530,7 @@ const
     '    float curtain = smoothstep(0.0, 0.03, d) * exp(-d * (3.2 - 1.5 * uBass));'#10 +
     '    curtain *= 0.4 + 0.6 * fbm(vec2(x * 6.0, uTime * 0.05 + fi));'#10 +
     '    vec3 ac = vivid(uPal[2 + i], 1.0);'#10 +
-    '    col += ac * curtain * (0.75 + 0.4 * uEnergy + 0.35 * band(0.2 + 0.3 * fi) + 0.3 * uDrive * uKick);'#10 +
+    '    col += ac * curtain * (0.75 + 0.4 * uEnergy + 0.35 * band(0.2 + 0.3 * fi) + 0.15 * uDrive * uKick);'#10 +
     '  }'#10 +
     '  col = mix(col, grade(cover(p * 0.4, 7.0)) * 0.6, 0.25 * uHasCover);'#10 +
     '  col += (hash(uv * uRes + fract(uTime) * 100.0) - 0.5) * 0.05;'#10 +
@@ -512,7 +543,7 @@ const
     'vec3 scene(vec2 uv, vec2 p){'#10 +
     '  float dr = uDrive; float t = uTime;'#10 +
     '  vec2 c = p - vec2(0.0, 0.1);'#10 +
-    '  float R = 0.19 * (1.0 + (0.012 + 0.055 * dr) * uKick + (0.01 + 0.02 * dr) * uBass);'#10 +
+    '  float R = 0.19 * (1.0 + (0.01 + 0.02 * dr) * uBass);'#10 +
     '  float r = length(c); float a = atan(c.x, c.y);'#10 +
     // background: the cover blurred + neon graded, slow drift; a soft fbm veil of the two neon tones
     '  float ca = t * (0.015 + 0.02 * dr); mat2 m = mat2(cos(ca), -sin(ca), sin(ca), cos(ca));'#10 +
@@ -641,7 +672,7 @@ begin
       Bass := glGetUniformLocation(Programs[I], 'uBass');
       Mid := glGetUniformLocation(Programs[I], 'uMid');
       High := glGetUniformLocation(Programs[I], 'uHigh');
-      Kick := glGetUniformLocation(Programs[I], 'uKick');
+      Kick := glGetUniformLocation(Programs[I], 'uKickIn');
       Energy := glGetUniformLocation(Programs[I], 'uEnergy');
       Seed := glGetUniformLocation(Programs[I], 'uSeed');
       Alpha := glGetUniformLocation(Programs[I], 'uAlpha');
@@ -654,6 +685,8 @@ begin
       Snare := glGetUniformLocation(Programs[I], 'uSnare');
       Hat := glGetUniformLocation(Programs[I], 'uHat');
       Drive := glGetUniformLocation(Programs[I], 'uDrive');
+      Gain := glGetUniformLocation(Programs[I], 'uGain');
+      HatN := glGetUniformLocation(Programs[I], 'uHatN');
     end;
   end;
   glDeleteShader(V);
@@ -665,17 +698,19 @@ end;
 
 { ---------------------------------------------------------------- analysis thread }
 
-constructor TLcvAnalysis.Create(const FileName: IPath);
+constructor TLcvAnalysis.Create(const FileName: IPath; ASeed: cardinal);
 var
   I: integer;
 begin
   FFile := FileName;
+  PlanSeed := ASeed;
   // all memory up front: the render thread may read Rows while this thread runs
   SetLength(Rows, MAX_ROWS);
   SetLength(Kick, MAX_ROWS);
   SetLength(OnK, MAX_ROWS); SetLength(OnS, MAX_ROWS); SetLength(OnH, MAX_ROWS);
   SetLength(FluxK, MAX_ROWS); SetLength(FluxS, MAX_ROWS); SetLength(FluxH, MAX_ROWS);
   SetLength(SubL, MAX_ROWS); SetLength(Db, MAX_ROWS); SetLength(Drive, MAX_ROWS);
+  SetLength(PunchK, MAX_ROWS); SetLength(Level, MAX_ROWS);
   SetLength(Twr, FFTN div 2);
   SetLength(Twi, FFTN div 2);
   SetLength(Win, FFTN);
@@ -951,6 +986,8 @@ begin
     end;
     if (Row > 500) and not Terminated then
       ComputeDrive(Row);
+    if (Row > 500) and not Terminated then
+      ComputePlan(Row);
     Ok := true;
   except
     on E: Exception do
@@ -1062,6 +1099,8 @@ begin
     Hits[I] := 0.5 * EnsureRange((Loud[I] - LLo) / Max(LHi - LLo, 1e-6), 0, 1) +
                0.3 * EnsureRange((Dens[I] - DLo) / Max(DHi - DLo, 1e-6), 0, 1) +
                0.2 * EnsureRange((Subs[I] - SLo) / Max(SHi - SLo, 1e-6), 0, 1);
+  for I := 0 to N - 1 do
+    Level[I] := Hits[I];
   Box(Hits, Sect, 150);
   DMed := PctAct(Dens, 0.6); STop := PctAct(Subs, 0.8); LTop := PctAct(Loud, 0.8); HMed := PctAct(HatD, 0.6);
   E := 0.40 * EnsureRange((DMed - 1.5) / 3.5, 0, 1) + 0.25 * EnsureRange((STop - 1.2) / 2.0, 0, 1) +
@@ -1071,6 +1110,29 @@ begin
   SongEnergy := E;
   WriteBarrier;
   DriveReady := true;
+end;
+
+{ beat grid -> punch track + look schedule (ULongqVizBeat), once per song in this thread; mood as DecideMood
+  reads it from the song energy (hype / mid / calm) }
+procedure TLcvAnalysis.ComputePlan(N: integer);
+var
+  Mood: integer;
+begin
+  if not VBTrack(FluxK, FluxS, FluxH, N, Grid) then
+  begin
+    Log.LogInfo('cover viz: no beat grid, looks cycle on the 20 s timer', 'longq');
+    Exit;
+  end;
+  VBPunchTrack(Grid, OnK, OnS, N, PunchK);
+  WriteBarrier;
+  PunchReady := true;
+  if SongEnergy >= SONG_HYPE then Mood := VB_MOOD_HYPE
+  else if SongEnergy < SONG_CALM then Mood := VB_MOOD_CALM
+  else Mood := VB_MOOD_MID;
+  if not VBPlanLooks(Grid, Level, N, Mood, -1, PlanSeed, Plan) then
+    Exit;
+  WriteBarrier;
+  PlanReady := true;
 end;
 
 { ---------------------------------------------------------------- video }
@@ -1116,7 +1178,7 @@ begin
   Template := 9;
   PrevTemplate := -1;
   FDrive := 0.35;
-  LastIdx := -1;
+  VBPulseReset(Pulse, 0.35);
   Bpm := 0;
   Bpm := Song.BPM / 4; // stored x4 internally
   if Bpm > 0 then
@@ -1136,7 +1198,7 @@ begin
     if (Template < 0) or (Template >= LCV_NUM_TEMPLATES) then
       Template := 0;
   end;
-  Ana := TLcvAnalysis.Create(Song.Path.Append(Song.Audio));
+  Ana := TLcvAnalysis.Create(Song.Path.Append(Song.Audio), cardinal(Trunc(Seed * 4294967000.0)));
   FramesDir := GetEnvironmentVariable('LONGQ_VIZ_FRAMES');
   S := GetEnvironmentVariable('LONGQ_VIZ_BENCH');
   I := Pos('x', S);
@@ -1550,24 +1612,9 @@ procedure TLcvVideo.UpdateAudio(T: real);
 var
   Now: cardinal;
   Dt, A, Up, Dn: single;
-  Idx, N, B, J, J0: integer;
+  Idx, N, B: integer;
   Row: TBandRow;
-  K, SK, SS, SH, DT2: single;
-
-  { fast but not instant attack (full scale in 40 ms = 2-3 frames), exponential decay: no 1-frame flash }
-  procedure Env(var E, Pend: single; Hit, Tau: single);
-  begin
-    if Hit > Pend then
-      Pend := Hit;
-    if Pend > E then
-      E := Min(Pend, E + Dt * 25)
-    else
-    begin
-      Pend := 0;
-      E := E * Exp(-Dt / Tau);
-    end;
-  end;
-
+  K: single;
 begin
   Now := SDL_GetTicks;
   if LastTicks = 0 then
@@ -1577,22 +1624,10 @@ begin
   N := Ana.Count;
   ReadBarrier;
   Idx := Trunc(T / HOP);
-  SK := 0; SS := 0; SH := 0;
   if (Idx >= 0) and (Idx < N) and Playing then
   begin
     Row := Ana.Rows[Idx];
     K := Ana.Kick[Idx];
-    // every onset row since the last frame counts (a slow frame must not drop a hit); a seek reads one row
-    J0 := LastIdx + 1;
-    if (J0 > Idx) or (Idx - J0 > 10) then
-      J0 := Idx;
-    for J := J0 to Idx do
-    begin
-      SK := Max(SK, Ana.OnK[J]);
-      SS := Max(SS, Ana.OnS[J]);
-      SH := Max(SH, Ana.OnH[J]);
-    end;
-    LastIdx := Idx;
   end
   else
   begin
@@ -1612,17 +1647,14 @@ begin
   FHigh := 0; for B := 10 to 15 do FHigh := FHigh + Bands[B] / 6;
   KickV := Max(K, KickV * Exp(-Dt * 7));
   FEnergy := FEnergy + (1 - Exp(-Dt * 0.7)) * ((FBass + FMid + FHigh) / 3 - FEnergy);
-  Env(EnvK, PendK, SK, 0.18);
-  Env(EnvS, PendS, SS, 0.22);
-  Env(EnvH, PendH, SH, 0.08);
-  // drive ramps between sections over ~1 s; before the whole-song pass is done, a neutral 0.35
-  if Ana.DriveReady and (Idx >= 0) and (Idx < N) then
-    DT2 := Ana.Drive[Idx]
-  else if Ana.DriveReady then
-    DT2 := FDrive
+  // longq 11-15 punch: kick/808 hits (downbeats x1.35 once the beat grid exists), snare, hats; every onset row
+  // since the last frame counts (a slow frame never drops a hit), attack 25 ms, ~150 ms decay
+  if Ana.PunchReady then
+    VBPulseStep(Pulse, T, Dt, Playing, Ana.PunchK, Ana.OnS, Ana.OnH, Ana.Drive, N, Ana.DriveReady)
   else
-    DT2 := 0.35;
-  FDrive := FDrive + (1 - Exp(-Dt / 1.0)) * (DT2 - FDrive);
+    VBPulseStep(Pulse, T, Dt, Playing, Ana.OnK, Ana.OnS, Ana.OnH, Ana.Drive, N, Ana.DriveReady);
+  EnvK := Pulse.EnvK; EnvS := Pulse.EnvS; EnvH := Pulse.EnvH;
+  FDrive := Pulse.Drive;
 end;
 
 procedure TLcvVideo.DrawTemplate(Tpl: integer; Alpha: single; T: real);
@@ -1650,6 +1682,8 @@ begin
   glUniform1f(ULoc[Tpl].Snare, EnvS);
   glUniform1f(ULoc[Tpl].Hat, EnvH);
   glUniform1f(ULoc[Tpl].Drive, FDrive);
+  glUniform1f(ULoc[Tpl].Gain, VB_GAIN[Tpl]);
+  glUniform1f(ULoc[Tpl].HatN, Pulse.HatN);
   glUniform1f(ULoc[Tpl].Energy, FEnergy);
   glUniform1f(ULoc[Tpl].Seed, Seed * 100);
   glUniform1f(ULoc[Tpl].Alpha, Alpha);
@@ -1668,7 +1702,8 @@ const
 
 procedure TLcvVideo.GetFrame(Time: Extended);
 var
-  I: integer;
+  I, PlanA, PlanB: integer;
+  PlanAlpha: single;
   T: real;
   Fade: single;
   DepthWas, BlendWas: boolean;
@@ -1681,9 +1716,36 @@ begin
   else if Decided and not DecidedFull and Ana.Done then
     DecideMood; // first pick used a partial analysis (slow machine): settle it once, same seed
 
-  // longq 11-12 (operator "cycle through the different visuals by default, every 10-30 s, whatever is normal"):
-  // every LCV_CYCLE_MS the look crossfades to the next distinct one of the song's mood set; Ctrl+Tab pins a look
-  if Decided and not Forced and (PrevTemplate < 0) and (SDL_GetTicks - LastCycle >= LCV_CYCLE_MS) then
+  // longq 11-15 (operator "cycle through them according to speed of song", "through diff viz"): once the beat
+  // grid is in, the look follows the song-time schedule (switch every 8-24 bars on a downbeat, crossfade ends on
+  // it, ULongqVizBeat). Song time, so pause/seek just work. Ctrl+Tab (Forced) pins a look and leaves the plan
+  if Decided and not Forced and not PlanOn and Ana.PlanReady then
+  begin
+    ReadBarrier;
+    PlanOn := true;
+    VBLookAt(Ana.Plan, T, I, PlanA, PlanB, PlanAlpha);
+    Log.LogInfo(Format('cover viz: tempo-locked looks, %.1f bpm (grid), %d bars per look, %d switches (%d on a section change), fade %.2f s, mood %d',
+      [Ana.Grid.Bpm, Ana.Plan.BarsPerLook, Length(Ana.Plan.SwitchT) - 1, Ana.Plan.SectionSwitches, Ana.Plan.Fade, Ana.Plan.Mood]), 'longq');
+    if PlanA <> Template then
+    begin
+      // first hand-over from the mood pick: a normal 1.5 s fade
+      PrevTemplate := Template;
+      FadeStart := SDL_GetTicks;
+      Template := PlanA;
+    end;
+  end;
+  if PlanOn and Forced then
+    PlanOn := false;
+  if PlanOn and (PrevTemplate < 0) then
+  begin
+    VBLookAt(Ana.Plan, T, I, PlanA, PlanB, PlanAlpha);
+    Template := PlanA;
+  end
+  else
+    PlanB := -1;
+
+  // fallback (no beat grid yet / none found): every LCV_CYCLE_MS crossfade to the next look of the mood set
+  if Decided and not Forced and not PlanOn and (PrevTemplate < 0) and (SDL_GetTicks - LastCycle >= LCV_CYCLE_MS) then
   begin
     LastCycle := SDL_GetTicks;
     for I := 1 to 3 do
@@ -1718,7 +1780,11 @@ begin
     end;
   end
   else
+  begin
     DrawTemplate(Template, 1, T);
+    if PlanB >= 0 then
+      DrawTemplate(PlanB, PlanAlpha, T);
+  end;
   if BenchW > 0 then
     BenchFrame(T);
   glBindVertexArray(0);
@@ -1807,9 +1873,9 @@ begin
       Playing := true;
       LastTicks := 0;
       FillChar(Bands, SizeOf(Bands), 0);
-      KickV := 0; FEnergy := 0.5; EnvK := 0; EnvS := 0; EnvH := 0; PendK := 0; PendS := 0; PendH := 0;
-      LastIdx := -1;
+      KickV := 0; FEnergy := 0.5; EnvK := 0; EnvS := 0; EnvH := 0;
       if Ana.DriveReady then FDrive := Ana.Drive[Min(Ana.Count - 1, Trunc(T / HOP))];
+      VBPulseReset(Pulse, FDrive);
       // settle the smoothing on the real band data around T
       for Y := 0 to 30 do
       begin

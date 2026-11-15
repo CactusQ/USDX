@@ -278,6 +278,7 @@ uses
 {$IFDEF UseProjectM}
   // must be after UVideo, so it will not be the default video module
   UVisualizer               in 'media\UVisualizer.pas',
+  ULongqVizBeat             in 'media\ULongqVizBeat.pas',
   ULongqCoverViz            in 'media\ULongqCoverViz.pas',
   ULongqPitchShift          in 'media\ULongqPitchShift.pas',
 {$ENDIF}
