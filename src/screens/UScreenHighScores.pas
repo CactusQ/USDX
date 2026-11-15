@@ -95,6 +95,7 @@ const
 implementation
 
 uses
+  ULongqVersions,
   UDataBase,
   UGraphic,
   UHelp,
@@ -426,7 +427,7 @@ begin
   UpdateHeaderText;
   LoadCurrentSongScores;
 
-  Text[TextArtistTitle].Text := CurrentSong.Artist + ' - ' + CurrentSong.Title;
+  Text[TextArtistTitle].Text := CurrentSong.Artist + ' - ' + LongqDisplayTitle(CurrentSong);
 
   if Length(CurrentSong.Score[Player[0].Level]) = 0 then
     FadeTo(@ScreenSong); //if there are no scores to show, go to next screen

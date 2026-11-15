@@ -31,12 +31,14 @@ function LongqCycleVersion(Cur: TSong; Dir: integer): TSong;
 { Title for the song screen: "<title>  < <version> >" for grouped charts, the plain title otherwise. }
 function LongqVersionTitle(S: TSong): UTF8String;
 function LongqHasVersions(S: TSong): boolean;
+{ Title for any on-screen place (score, highscores, jukebox, medley): version tags stripped. }
+function LongqDisplayTitle(S: TSong): UTF8String;
 { Make Target (a member of Cur's group) the group's entry and remember it in the data dir
   (lyric_versions.txt, read at the next start). Returns Target, or Cur if Target is not a member. }
 function LongqSetVersion(Cur, Target: TSong): TSong;
 { Position of S in its group, -1 without siblings. CJK reading charts: 0 = + ROMAJI, 1 = original only. }
 function LongqVersionIndex(S: TSong): integer;
-{ Short picker labels for the song menu Lyrics row ("KR + ROMAJI" / "KR", "ORIGINAL" / "AI" ...). }
+{ Short picker labels for the song menu Lyrics row ("KR + Romaji" / "KR", "Duet" / "Solo", never tag text). }
 function LongqVersionLabels(S: TSong): TLongqLabels;
 { Pick entry Index of LongqVersionLabels; returns the chart to show (Cur for the CJK romaji toggle). }
 function LongqSetVersionIndex(Cur: TSong; Index: integer): TSong;
@@ -134,18 +136,33 @@ begin
   Result := Assigned(S) and (not S.Main) and ((Length(S.VersionGroup) > 1) or S.ReadingChoice);
 end;
 
-function LongqVersionTitle(S: TSong): UTF8String;
+function LongqDisplayTitle(S: TSong): UTF8String;
 var
   Words: UTF8String;
 begin
-  // CJK: plain title, the script/romaji choice is not a different song (operator 2026-11-11:
-  // "'Hangeul + reading' should be no title")
-  if Assigned(S) and S.ReadingChoice then
-    Result := LVStripSuffix(S.Title, Words)
-  else if LongqHasVersions(S) then
-    Result := S.VersionBaseTitle + '  < ' + S.VersionLabel + ' >'
+  if not Assigned(S) then
+    Exit('');
+  if S.VersionBaseTitle <> '' then
+    Result := S.VersionBaseTitle
   else
-    Result := S.Title;
+    Result := LVStripSuffix(S.Title, Words);
+end;
+
+function LongqVersionTitle(S: TSong): UTF8String;
+var
+  Lbl: TLongqLabels;
+  I: integer;
+begin
+  // operator 2026-11-15: never "< ORIGINAL >", "AI", "Native" or any tag text on screen; a song with
+  // several versions shows a short real difference ("Duet", "Adlibs only", "KR + Romaji") or nothing
+  Result := LongqDisplayTitle(S);
+  if Assigned(S) and (not S.ReadingChoice) and LongqHasVersions(S) then
+  begin
+    Lbl := LongqVersionLabels(S);
+    I := LongqVersionIndex(S);
+    if (I >= 0) and (I <= High(Lbl)) and (Copy(Lbl[I], 1, 8) <> 'Version ') and (Lbl[I] <> 'Solo') then
+      Result := Result + '  (' + Lbl[I] + ')';
+  end;
 end;
 
 function SongInfo(S: TSong): TLVInfo;
@@ -374,19 +391,6 @@ begin
   Log.LogStatus('lyric version: ' + Result.VersionLabel + ' -> ' + ChartId(Result), 'LongqSetVersion');
 end;
 
-function ShortLabel(const L: UTF8String): UTF8String;
-var
-  U: UTF8String;
-begin
-  // the Lyrics row is one menu button wide: short words (operator 2026-11-11 "use short words")
-  U := UpperCase(L);
-  if Pos('AI', U) = 1 then
-    U := 'AI' + Copy(U, 3, MaxInt);
-  U := StringReplace(U, 'ROMANIZED', 'ROMAJI', [rfReplaceAll]);
-  U := StringReplace(U, 'ROMANIZATION', 'ROMAJI', [rfReplaceAll]);
-  Result := U;
-end;
-
 function LongqVersionLabels(S: TSong): TLongqLabels;
 var
   I: integer;
@@ -399,19 +403,28 @@ begin
   begin
     Code := S.ReadingLang;
     if Code = '' then
-      Code := 'ORIGINAL';
+      Code := LVScriptCode(S.Path.Append(S.FileName).ToNative);
     if Code = 'CN' then
-      Rom := 'PINYIN'
+      Rom := 'Pinyin'
     else
-      Rom := 'ROMAJI';
+      Rom := 'Romaji';
     SetLength(Result, 2);
-    Result[0] := Code + ' + ' + Rom;
-    Result[1] := Code;
+    if Code = '' then
+    begin
+      Result[0] := 'With ' + Rom;
+      Result[1] := 'No ' + Rom;
+    end
+    else
+    begin
+      Result[0] := Code + ' + ' + Rom;
+      Result[1] := Code;
+    end;
     Exit;
   end;
   SetLength(Result, Length(S.VersionGroup));
   for I := 0 to High(S.VersionGroup) do
-    Result[I] := ShortLabel(S.VersionGroup[I].VersionLabel);
+    Result[I] := S.VersionGroup[I].VersionLabel;
+  LVPickerLabels(Result);
 end;
 
 function LongqSetVersionIndex(Cur: TSong; Index: integer): TSong;

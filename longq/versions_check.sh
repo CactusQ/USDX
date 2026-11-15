@@ -30,6 +30,7 @@ for d in "_NEW_AI/f5ve - UFO" "_NEW_AI/f5ve - UFO (AI)" "_NEW_AI/f5ve - UFO (AI 
          "BLACKPINK - As If Its Your Last" "Lady Gaga, Bradley Cooper - Shallow" "_NEW_AI/Nelly - Hot In Herre (AI)"; do
   mkdir -p "$T/$d"
   SRC="$LIVE/$d"; [ -d "$SRC" ] || SRC="$STAGED/$d"   # fixtures may be staged out of the live library
+  [ -d "$SRC" ] || SRC="$HOME/.local/state/ultrastar_backup/dedup_20261115/$d"   # or deduped (usdx-cleanup-1115)
   find "$SRC" -maxdepth 1 \( -name '*.txt' -o -name '*.mp3' -o -name '*.reading' \) -exec cp -p {} "$T/$d/" \;
 done
 mkdir -p "$DATA"

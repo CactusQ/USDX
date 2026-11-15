@@ -219,6 +219,7 @@ const
 implementation
 
 uses
+  ULongqVersions,
   ULongqGolden,
   UAvatars,
   UGraphic,
@@ -1177,8 +1178,8 @@ begin
   MapPlayersToPosition;
 
   Text[TextArtist].Text      := CurrentSong.Artist;
-  Text[TextTitle].Text       := CurrentSong.Title;
-  Text[TextArtistTitle].Text := CurrentSong.Artist + ' - ' + CurrentSong.Title;
+  Text[TextTitle].Text       := LongqDisplayTitle(CurrentSong);
+  Text[TextArtistTitle].Text := CurrentSong.Artist + ' - ' + LongqDisplayTitle(CurrentSong);
 
   //TODO: adapt for players 7 to 12
   // set visibility

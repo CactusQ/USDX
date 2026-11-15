@@ -268,6 +268,7 @@ const
 implementation
 
 uses
+  ULongqVersions,
   UBeatTimer,
   UDisplay,
   UDraw,
@@ -862,7 +863,7 @@ begin
                 Button[SongDescriptionClone].Y := Y;
                 Button[SongDescriptionClone].Text[0].X := X + Button[SongDescription[I]].Text[0].X - Button[SongDescription[I]].X;
                 Button[SongDescriptionClone].Text[0].Y := Y + Button[SongDescription[I]].Text[0].Y - Button[SongDescription[I]].Y;
-                Button[SongDescriptionClone].Text[0].Text := CatSongs.Song[JukeboxVisibleSongs[Interaction + ListMin]].Artist + ' - ' + CatSongs.Song[JukeboxVisibleSongs[Interaction + ListMin]].Title;
+                Button[SongDescriptionClone].Text[0].Text := CatSongs.Song[JukeboxVisibleSongs[Interaction + ListMin]].Artist + ' - ' + LongqDisplayTitle(CatSongs.Song[JukeboxVisibleSongs[Interaction + ListMin]]);
 
                 MoveX := Button[SongDescription[I]].Texture.X;
                 MoveY := Button[SongDescription[I]].Texture.Y;
@@ -2530,7 +2531,7 @@ begin
        Finish;
     CurrentSong := CatSongs.Song[JukeboxVisibleSongs[ID]];
     Text[JukeboxTextActualSongArtist].Text := CurrentSong.Artist;
-    Text[JukeboxTextActualSongTitle].Text := CurrentSong.Title;
+    Text[JukeboxTextActualSongTitle].Text := LongqDisplayTitle(CurrentSong);
 
   Button[JukeboxSongMenuPlaylist].SetSelect(false);
   Paused := false;

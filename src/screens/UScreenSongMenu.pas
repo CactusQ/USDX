@@ -434,7 +434,7 @@ begin
         if SelectsS[0].Visible then
         begin
           LyricSong := CatSongs.Song[ScreenSong.Interaction];
-          // short labels (operator 2026-11-11): CJK "KR + ROMAJI" / "KR", others "ORIGINAL" / "AI" ...
+          // short labels (operator 2026-11-15): CJK "KR + Romaji" / "KR", "Duet" / "Solo"; never ORIGINAL/AI/Native
           Labels := LongqVersionLabels(LyricSong);
           SetLength(ISelections1, Length(Labels));
           for I := 0 to High(Labels) do

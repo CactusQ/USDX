@@ -7,7 +7,7 @@ program lvtest;
 {$MODE OBJFPC}{$H+}{$codepage utf8}
 
 uses
-  SysUtils, Classes, ULongqVersionKey;
+  SysUtils, StrUtils, Classes, ULongqVersionKey;
 
 var
   Fails: integer = 0;
@@ -56,6 +56,23 @@ begin
   Check('label AI kanji furi', LVLabel(Info('f5ve', 'UFO (kanji)', '/s/_NEW_AI/f5ve - UFO (AI kanji)', 'a.mp3', false, 2)), 'AI Kanji + furigana');
   Check('label fixed', LVLabel(Info('f5ve', 'UFO (fixed)', '/s/_NEW_AI/f5ve - UFO', 'a.mp3', false, 2)), 'Fixed + furigana');
   Check('label duet', LVLabel(Info('LG', 'Shallow', '/s/Shallow', 'a.mp3', true)), 'Duet');
+  SetLength(L, 2); L[0] := 'Original'; L[1] := 'AI';
+  LVPickerLabels(L);
+  Check('picker orig/AI', L[0] + '|' + L[1], 'Version 1|Version 2');
+  SetLength(L, 2); L[0] := 'Duet'; L[1] := 'Original';
+  LVPickerLabels(L);
+  Check('picker duet/solo', L[0] + '|' + L[1], 'Duet|Solo');
+  SetLength(L, 2); L[0] := 'AI + reading'; L[1] := 'AI Romaji';
+  LVPickerLabels(L);
+  Check('picker reading/romaji', L[0] + '|' + L[1], 'Version 1|Romaji');
+  Check('short hangul reading', LVShortLabel('Hangul + reading'), 'KR + Romaji');
+  Check('short kanji', LVShortLabel('AI Kanji'), 'JP');
+  Check('short native fixed', LVShortLabel('Native Fixed both'), '');
+  Check('strip [VIDEO]', LVStripSuffix('Numb [VIDEO]', W), 'Numb');
+  SetLength(L, 2); L[0] := 'AI'; L[1] := 'AI Studio';
+  LVPickerLabels(L);
+  Check('picker MV/studio', L[0] + '|' + L[1], 'MV audio|Studio audio');
+  Check('short adlibs', LVShortLabel('AI Adlibs'), 'Adlibs only');
   Check('label multi', LVLabel(Info('LG', 'Shallow [MULTI]', '/s/Shallow', 'a.mp3', true)), 'Duet');
   A := nil;
   SetLength(A, 1);
@@ -148,8 +165,25 @@ begin
   end;
 end;
 
+function CjkLabels(K: integer): string;
+var
+  Code: string;
+begin
+  Code := LVReadingLang(ChangeFileExt(Paths[K], '.reading'));
+  if Code = '' then
+    Code := LVScriptCode(Paths[K]);
+  if Code = '' then
+    Result := 'With Romaji | No Romaji'
+  else if Code = 'CN' then
+    Result := 'CN + Pinyin | CN'
+  else
+    Result := Code + ' + Romaji | ' + Code;
+end;
+
 procedure DryRun(const Root: string);
 var
+  Script: integer;
+  Shown: string;
   G: TIntArray;
   Counts: TIntArray;
   I, J, Groups, Grouped: integer;
@@ -180,6 +214,28 @@ begin
       LVDedupLabels(Lab);
       for J := 0 to High(Lab) do
         WriteLn('   ', Lab[J]:28, '  ', Copy(Paths[Idx[J]], Length(Root) + 2, MaxInt));
+      // what the game shows (operator 2026-11-15 label rules), mirrors LongqVersionLabels
+      Script := -1;
+      for J := 0 to High(Idx) do
+        if (Infos[Idx[J]].ReadingKind > 0) and (Script < 0) then
+          Script := Idx[J];
+      if Script >= 0 then
+        WriteLn('SHOWN ', Infos[I].Artist, ' - ', LVStripSuffix(Infos[I].Title, W), ' || ', CjkLabels(Script))
+      else
+      begin
+        LVPickerLabels(Lab);
+        Shown := '';
+        for J := 0 to High(Lab) do
+          Shown := Shown + IfThen(J > 0, ' | ', '') + Lab[J];
+        WriteLn('SHOWN ', Infos[I].Artist, ' - ', LVStripSuffix(Infos[I].Title, W), ' || ', Shown);
+      end;
+    end
+    else if Counts[G[I]] = 1 then
+    begin
+      if Infos[I].ReadingKind > 0 then
+        WriteLn('SHOWN ', Infos[I].Artist, ' - ', LVStripSuffix(Infos[I].Title, W), ' || ', CjkLabels(I))
+      else
+        WriteLn('SHOWN ', Infos[I].Artist, ' - ', LVStripSuffix(Infos[I].Title, W), ' || ');
     end;
   WriteLn(Format('charts=%d  entries_after=%d  groups=%d  charts_in_groups=%d',
     [Length(Infos), Length(Infos) - Grouped + Groups, Groups, Grouped]));

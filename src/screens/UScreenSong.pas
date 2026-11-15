@@ -3351,7 +3351,7 @@ begin
 
         Text[TextMedleyNumber[I]].Text := IntToStr(I + 1 + J);
         Text[TextMedleyArtist[I]].Text := CatSongs.Song[ScreenJukebox.JukeboxSongsList[I + J]].Artist;
-        Text[TextMedleyTitle[I]].Text  := CatSongs.Song[ScreenJukebox.JukeboxSongsList[I + J]].Title;
+        Text[TextMedleyTitle[I]].Text  := LongqDisplayTitle(CatSongs.Song[ScreenJukebox.JukeboxSongsList[I + J]]);
       end
       else
       begin
@@ -3382,7 +3382,7 @@ begin
 
         Text[TextMedleyNumber[I]].Text := IntToStr(I + 1 + J);
         Text[TextMedleyArtist[I]].Text := CatSongs.Song[PlaylistMedley.Song[I + J]].Artist;
-        Text[TextMedleyTitle[I]].Text  := CatSongs.Song[PlaylistMedley.Song[I + J]].Title;
+        Text[TextMedleyTitle[I]].Text  := LongqDisplayTitle(CatSongs.Song[PlaylistMedley.Song[I + J]]);
       end
       else
       begin

@@ -46,6 +46,14 @@ function LVReadingKind(const ReadingPath: string): integer;
 function LVReadingLang(const ReadingPath: string): string;
 { 'KR' / 'JP' / 'CN' for a #LANGUAGE value, '' for other languages. }
 function LVLangCode(const Language: string): string;
+{ 'KR' / 'JP' / 'CN' from the script of the lyric characters in a chart file, '' if none. }
+function LVScriptCode(const ChartPath: string): string;
+{ On-screen label for one chart (operator 2026-11-15: never "Original", "AI", "Native" or any tag text):
+  "KR + Romaji", "JP", "Duet", "Adlibs only", ... ; '' when the chart carries no visible difference. }
+function LVShortLabel(const ALabel: UTF8String): UTF8String;
+{ Picker labels for one group, from LVLabel labels: short, never empty, unique ("Solo" next to "Duet",
+  else "Version 1", "Version 2" for charts that differ only by source tags). }
+procedure LVPickerLabels(var Labels: array of UTF8String);
 
 implementation
 
@@ -53,11 +61,12 @@ uses
   SysUtils;
 
 const
-  VERSION_WORDS: array[0..30] of string = (
+  VERSION_WORDS: array[0..34] of string = (
     'ai', 'romaji', 'romanized', 'romanization', 'romaja', 'roman', 'pinyin',
     'kanji', 'kana', 'hiragana', 'katakana', 'furigana', 'jp', 'japanese',
     'hangeul', 'hangul', #$ED#$95#$9C#$EA#$B8#$80 {한글}, 'hanzi', 'ch-s', 'ch-t',
-    'fixed', 'pitch', 'key', 'time', 'both', 'multi', 'duet', 'duett', 'original', 'orig', 'native');
+    'fixed', 'pitch', 'key', 'time', 'both', 'multi', 'duet', 'duett', 'original', 'orig', 'native',
+    'adlib', 'adlibs', 'video', 'studio');
 
 function IsVersionWord(const W: string): boolean;
 var
@@ -176,6 +185,8 @@ begin
     'fixed': Result := 'Fixed';
     'multi', 'duet', 'duett': Result := 'Duet';
     'original', 'orig': Result := 'Original';
+    'adlib', 'adlibs': Result := 'Adlibs';
+    'studio': Result := 'Studio';
   else
     if W = VERSION_WORDS[16] then
       Result := 'Hangul'
@@ -432,6 +443,145 @@ begin
     end;
   except
     Result := '';
+  end;
+end;
+
+function LVScriptCode(const ChartPath: string): string;
+var
+  F: file of byte;
+  Buf: array of byte;
+  N, I, Cp, Hangul, Kana, Han: integer;
+begin
+  Result := '';
+  if not FileExists(ChartPath) then
+    Exit;
+  Hangul := 0; Kana := 0; Han := 0;
+  try
+    AssignFile(F, ChartPath);
+    FileMode := 0;
+    Reset(F);
+    try
+      N := FileSize(F);
+      if N > 262144 then N := 262144;
+      SetLength(Buf, N);
+      if N > 0 then
+        BlockRead(F, Buf[0], N);
+    finally
+      CloseFile(F);
+    end;
+  except
+    Exit;
+  end;
+  I := 0;
+  while I < N - 2 do
+  begin
+    if (Buf[I] and $F0) = $E0 then
+    begin
+      Cp := ((Buf[I] and $0F) shl 12) or ((Buf[I + 1] and $3F) shl 6) or (Buf[I + 2] and $3F);
+      if (Cp >= $AC00) and (Cp <= $D7AF) then Inc(Hangul)
+      else if (Cp >= $3040) and (Cp <= $30FF) then Inc(Kana)
+      else if (Cp >= $4E00) and (Cp <= $9FFF) then Inc(Han);
+      Inc(I, 3);
+    end
+    else
+      Inc(I);
+  end;
+  if (Hangul > 0) and (Hangul >= Kana) then Result := 'KR'
+  else if Kana > 0 then Result := 'JP'
+  else if Han > 0 then Result := 'CN';
+end;
+
+function LVShortLabel(const ALabel: UTF8String): UTF8String;
+var
+  W, Code, Extra: string;
+  Duet, Adlibs, Rom: boolean;
+begin
+  Duet := false; Adlibs := false; Rom := false;
+  Code := ''; Extra := '';
+  for W in SplitWords(ALabel) do
+    case W of
+      'Duet': Duet := true;
+      'Adlibs': Adlibs := true;
+      'Studio': Code := 'Studio audio';
+      'Romaji': Rom := true;
+      'reading': if Code <> '' then Rom := true;
+      'furigana', 'Furigana': Extra := 'Furigana';
+      'Hangul': Code := 'KR';
+      'Kanji', 'Kana': Code := 'JP';
+      'Hanzi': Code := 'CN';
+    end; // AI, Original, Native, Fixed, pitch/key/time/both, numbers: source tags, never shown
+  if Rom then
+    Extra := 'Romaji';
+  if (Code <> '') and (Extra <> '') then
+    Result := Code + ' + ' + Extra
+  else if Code <> '' then
+    Result := Code
+  else
+    Result := Extra;
+  if Adlibs then
+    Result := Trim('Adlibs only ' + Result);
+  if Duet then
+    Result := Trim('Duet ' + Result);
+end;
+
+procedure LVPickerLabels(var Labels: array of UTF8String);
+var
+  I, J, N, K: integer;
+  HasDuet, HasStudio, Clash: boolean;
+  Base: array of UTF8String;
+begin
+  HasDuet := false;
+  for I := 0 to High(Labels) do
+  begin
+    Labels[I] := LVShortLabel(Labels[I]);
+    if Copy(Labels[I], 1, 4) = 'Duet' then
+      HasDuet := true;
+  end;
+  for I := 0 to High(Labels) do
+    if (Labels[I] = '') and HasDuet then
+      Labels[I] := 'Solo';
+  // studio-master chart next to the MV-audio chart (Niggas in Paris [Studio], 2026-11-15)
+  HasStudio := false;
+  for I := 0 to High(Labels) do
+    if Labels[I] = 'Studio audio' then
+      HasStudio := true;
+  for I := 0 to High(Labels) do
+    if (Labels[I] = '') and HasStudio then
+      Labels[I] := 'MV audio';
+  Clash := false;
+  for I := 0 to High(Labels) do
+    if Labels[I] = '' then
+      Clash := true
+    else
+      for J := 0 to I - 1 do
+        if Labels[J] = Labels[I] then
+          Clash := true;
+  if not Clash then
+    Exit;
+  // charts that differ only by source tags: numbered, the same label text for each of them
+  SetLength(Base, Length(Labels));
+  for I := 0 to High(Labels) do
+    Base[I] := Labels[I];
+  for I := 0 to High(Labels) do
+  begin
+    N := 0;
+    K := 0;
+    for J := 0 to High(Base) do
+      if Base[J] = Base[I] then
+      begin
+        Inc(N);
+        if J <= I then Inc(K);
+      end;
+    if (Labels[I] = '') or (N > 1) then
+      Labels[I] := Labels[I] + #2 + IntToStr(K);
+  end;
+  for I := 0 to High(Labels) do
+  begin
+    J := Pos(#2, Labels[I]);
+    if J = 1 then
+      Labels[I] := 'Version ' + Copy(Labels[I], 2, MaxInt)
+    else if J > 1 then
+      Labels[I] := Copy(Labels[I], 1, J - 1) + ' ' + Copy(Labels[I], J + 1, MaxInt);
   end;
 end;
 
