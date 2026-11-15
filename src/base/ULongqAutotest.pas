@@ -62,6 +62,7 @@ uses
   UThemes,
   USong,
   USongs,
+  UScreenSongJumpto,
   ULongqCoverViz;
 
 var
@@ -222,6 +223,37 @@ begin
   end;
 end;
 
+{ LONGQ_AUTOTEST_TAGSHOT=1 (lane usdx-fork-tags-1115): song card with tags, J search, type "kpop", tag list,
+  Down (row picked), Enter (#K-pop chip, filtered list), then quit. Screenshots in the user dir's screenshots. }
+procedure TagShots;
+var
+  Due: boolean;
+  C: AnsiChar;
+begin
+  Due := SDL_GetTicks - MenuShotTime >= 1500;
+  case MenuShotStep of
+    0: begin LogPick('tagshot start'); MenuShotStep := 1; MenuShotTime := SDL_GetTicks; end;
+    1: if Due then begin PendingShot := 'tag_card'; MenuShotStep := 2; MenuShotTime := SDL_GetTicks; end;
+    2: if Due then begin ScreenSong.ParseInput(SDLK_J, Ord('j'), true);
+         AutotestLog('tagshot J, search visible ' + BoolToStr(ScreenSongJumpto.Visible, true));
+         for C in AnsiString('kpop') do
+           ScreenSong.ParseInput(0, Ord(C), true);
+         AutotestLog('tagshot typed kpop');
+         MenuShotStep := 3; MenuShotTime := SDL_GetTicks; end;
+    3: if Due then begin PendingShot := 'tag_list'; MenuShotStep := 4; MenuShotTime := SDL_GetTicks; end;
+    4: if Due then begin ScreenSong.ParseInput(SDLK_DOWN, 0, true); MenuShotStep := 5; MenuShotTime := SDL_GetTicks; end;
+    5: if Due then begin PendingShot := 'tag_list_down'; MenuShotStep := 6; MenuShotTime := SDL_GetTicks; end;
+    6: if Due then begin ScreenSong.ParseInput(SDLK_RETURN, 0, true);
+         AutotestLog('tagshot Enter, search visible ' + BoolToStr(ScreenSongJumpto.Visible, true) +
+           ', visible songs ' + IntToStr(CatSongs.VisibleSongs));
+         MenuShotStep := 7; MenuShotTime := SDL_GetTicks; end;
+    7: if Due then begin PendingShot := 'tag_chip'; MenuShotStep := 8; MenuShotTime := SDL_GetTicks; end;
+    8: if Due then begin ScreenSong.ParseInput(SDLK_ESCAPE, 0, true); MenuShotStep := 9; MenuShotTime := SDL_GetTicks; end;
+    9: if Due then begin PendingShot := 'tag_filtered_list'; MenuShotStep := 10; MenuShotTime := SDL_GetTicks; end;
+    10: if Due then begin AutotestLog('tagshot done, quitting'); StartedSong := true; Halt(0); end;
+  end;
+end;
+
 procedure AutotestAfterSongScreen;
 begin
   if not AutotestActive or (PendingShot = '') then
@@ -242,6 +274,11 @@ begin
   if GetEnvironmentVariable('LONGQ_AUTOTEST_MENUSHOT') <> '' then
   begin
     MenuShots;
+    Exit;
+  end;
+  if GetEnvironmentVariable('LONGQ_AUTOTEST_TAGSHOT') <> '' then
+  begin
+    TagShots;
     Exit;
   end;
   for I := 0 to High(CatSongs.Song) do
