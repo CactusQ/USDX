@@ -103,7 +103,8 @@ uses
   UTime,
   UWebcam,
   ULongqAutotest,
-  ULongqVersions;
+  ULongqVersions,
+  USongs;
   //UVideoAcinerella;
 
 procedure Main;
@@ -186,6 +187,7 @@ begin
     Ini.Load;
     AutotestInit; // longq: only active with LONGQ_AUTOTEST set
     LongqVersionsDryRun; // longq: only active with LONGQ_VERSIONS_DRYRUN set (headless, exits)
+    LongqTagsDryRun; // longq: only active with LONGQ_TAGS_DRYRUN set (headless, exits)
 
     // Help
     Log.LogStatus('Load Help', 'Initialization');

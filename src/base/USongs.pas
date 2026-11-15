@@ -165,11 +165,15 @@ const
   IN_DELETE        = $00000200; //* Subfile was deleted */
   IN_DELETE_SELF   = $00000400; //* Self was deleted */
 
+{ longq: LONGQ_TAGS_DRYRUN=1 (SDL_VIDEODRIVER=dummy, scratch data dir): load songs, print the new sorts,
+  tag search and the tag list, PASS/FAIL lines, then exit. Called from UMain after Ini.Load. }
+procedure LongqTagsDryRun;
 
 implementation
 
 uses
   StrUtils,
+  Math,
   SDL2,
   UCommandLine,
   UFiles,
@@ -1333,6 +1337,127 @@ begin
   end;
   Names := All;
   Counts := N;
+end;
+
+procedure LongqTagsDryRun;
+var
+  Fails, I, J, N, Want: integer;
+  S, Three: TSong;
+  Names: TLqTagArray;
+  Counts: TLqCountArray;
+  Q: UTF8String;
+  Ord_: TSortingType;
+  Hit: boolean;
+
+  procedure Expect(Ok: boolean; const What: string);
+  begin
+    if Ok then
+      WriteLn('PASS ', What)
+    else
+    begin
+      WriteLn('FAIL ', What);
+      Inc(Fails);
+    end;
+  end;
+
+  function Entries: integer;
+  var K: integer;
+  begin
+    Result := 0;
+    for K := 0 to High(CatSongs.Song) do
+      if not CatSongs.Song[K].Main then
+        Inc(Result);
+  end;
+
+begin
+  if GetEnvironmentVariable('LONGQ_TAGS_DRYRUN') = '' then
+    Exit;
+  Fails := 0;
+  if CatCovers = nil then
+    CatCovers := TCatCovers.Create;
+  Ini.Tabs := 0;
+  Songs := TSongs.Create;
+  CatSongs := TCatSongs.Create;
+  for Ord_ in [sRecent, sMostPlayed, sPopular, sGenre] do
+  begin
+    Ini.Sorting := Ord(Ord_);
+    CatSongs.Refresh;
+    Write('SORT ', ISorting[Ord(Ord_)], ':');
+    for I := 0 to Min(5, High(CatSongs.Song)) do
+      with CatSongs.Song[I] do
+        Write(' | ', Artist, ' - ', Title, ' [added ', FormatDateTime('yyyy-mm-dd', LongqAdded), ' plays ', LongqPlays,
+          ' pop ', LongqPop, ' genre ', LongqPrimaryGenre(CatSongs.Song[I]), ']');
+    WriteLn;
+    N := 0;
+    for I := 1 to High(CatSongs.Song) do
+      case Ord_ of
+        sRecent: if CatSongs.Song[I - 1].LongqAdded < CatSongs.Song[I].LongqAdded then Inc(N);
+        sMostPlayed: if CatSongs.Song[I - 1].LongqPlays < CatSongs.Song[I].LongqPlays then Inc(N);
+        sPopular: if CatSongs.Song[I - 1].LongqPop < CatSongs.Song[I].LongqPop then Inc(N);
+      end;
+    Expect(N = 0, ISorting[Ord(Ord_)] + ' is descending (' + IntToStr(N) + ' inversions)');
+  end;
+  // tabs on: every entry under exactly one category button of the new sorts
+  Ini.Tabs := 1;
+  Ini.Sorting := Ord(sPopular);
+  CatSongs.Refresh;
+  N := 0;
+  for I := 0 to High(CatSongs.Song) do
+    if CatSongs.Song[I].Main then
+    begin
+      Write('CAT ', CatSongs.Song[I].Artist, '=', CatSongs.Song[I].CatNumber, ' ');
+      Inc(N);
+    end;
+  WriteLn;
+  Expect(N > 0, 'Popular tabs have category buttons');
+  Ini.Tabs := 0;
+  Ini.Sorting := Ord(sTitle);
+  CatSongs.Refresh;
+  WriteLn('entries=', Entries);
+  // a song with >= 3 tags is found under each of them (typed prefix and picked chip)
+  Three := nil;
+  for I := 0 to High(CatSongs.Song) do
+    if (not CatSongs.Song[I].Main) and (Length(CatSongs.Song[I].LongqTags) >= 3) then
+    begin
+      Three := CatSongs.Song[I];
+      Break;
+    end;
+  Expect(Three <> nil, 'some entry has >= 3 tags');
+  if Three <> nil then
+  begin
+    WriteLn('THREE ', Three.Artist, ' - ', Three.Title, ' tags: ', Three.Tags);
+    for J := 0 to High(Three.LongqTags) do
+    begin
+      for Q in [LqTagChip(Three.LongqTags[J]), Copy(LqTagNorm(Three.LongqTags[J]), 1, 3)] do
+      begin
+        N := CatSongs.SetFilter(Q, fltAll);
+        Expect(Three.Visible, Format('"%s" (%d songs) shows %s', [Q, N, Three.Title]));
+      end;
+    end;
+    CatSongs.SetFilter('', fltAll);
+  end;
+  for Q in ['kpop', 'k-pop', 'top100', 'genz', 'rap', 'duet', 'hip'] do
+  begin
+    CatSongs.LongqTagSuggest(Q, 6, Names, Counts);
+    Write('LIST "', Q, '":');
+    for I := 0 to High(Names) do
+      Write(' ', Names[I], ' (', Counts[I], ')');
+    WriteLn;
+    N := CatSongs.SetFilter(Q, fltAll);
+    WriteLn('FILTER "', Q, '" -> ', N, ' songs');
+    if Length(Names) > 0 then
+    begin
+      Want := Counts[0];
+      N := CatSongs.SetFilter(LqTagChip(Names[0]), fltAll);
+      Expect(N = Want, Format('chip %s -> %d songs = list count %d', [LqTagChip(Names[0]), N, Want]));
+      // combined with text: chip + artist word narrows, never widens
+      Hit := N >= CatSongs.SetFilter(LqTagChip(Names[0]) + ' a', fltAll);
+      Expect(Hit, 'chip + text narrows');
+    end;
+  end;
+  CatSongs.SetFilter('', fltAll);
+  WriteLn('dry run fails=', Fails);
+  Halt(Ord(Fails > 0));
 end;
 
 // -----------------------------------------------------------------------------
