@@ -63,6 +63,7 @@ uses
   UTextEncoding,
   UUnicodeStringHelper,
   UUnicodeUtils,
+  ULongqTagMatch,
   UMusic; // for TLines
 
 const
@@ -172,6 +173,12 @@ type
     Language:   UTF8String;
     Tags:       UTF8String;
     Year:       Integer;
+    // longq tags + extra sorts (operator 2026-11-15): #TAGS split, #POPULARITY 0-100, #ADDED date
+    // (fallback: chart file date), own play count from the score DB (filled by TCatSongs.Refresh)
+    LongqTags:  TLqTagArray;
+    LongqPop:   integer;
+    LongqAdded: TDateTime;
+    LongqPlays: integer;
 
     Title:      UTF8String;
     Artist:     UTF8String;
@@ -1432,10 +1439,26 @@ begin
     ParseMultivaluedFilterHeaders('LANGUAGE', self.Language, self.LanguageASCII);
 
     //Tags Sorting
-    if FormatVersion.MinVersion(1,0,0) then
+    // longq: #TAGS on every chart format (stock reads it only from #VERSION 1.0.0 on)
+    ParseMultivaluedFilterHeaders('TAGS', self.Tags, self.TagsASCII);
+    self.LongqTags := LqSplitTags(self.Tags);
+
+    // longq: popularity 0-100 and library date, written by the tag pass (forktags/apply_tags.py)
+    if (TagMapTryGetData('POPULARITY', Value)) then
     begin
-      ParseMultivaluedFilterHeaders('TAGS', self.Tags, self.TagsASCII);
+      RemoveTagsFromTagMap('POPULARITY');
+      TryStrToInt(Trim(Value), self.LongqPop);
     end;
+    if (TagMapTryGetData('ADDED', Value)) then
+    begin
+      RemoveTagsFromTagMap('ADDED');
+      Value := Trim(Value);
+      if (Length(Value) = 10) and (Value[5] = '-') and (Value[8] = '-') then
+        TryEncodeDate(StrToIntDef(Copy(Value, 1, 4), 0), StrToIntDef(Copy(Value, 6, 2), 0),
+          StrToIntDef(Copy(Value, 9, 2), 0), self.LongqAdded);
+    end;
+    if self.LongqAdded = 0 then
+      SysUtils.FileAge(Path.Append(Filename).ToNative, self.LongqAdded);
 
     //Year Sorting
     if (TagMapTryGetData('YEAR', Value)) then

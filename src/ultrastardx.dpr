@@ -206,6 +206,7 @@ uses
   ULongqTranspose   in 'base\ULongqTranspose.pas',
   ULongqSeekMath    in 'base\ULongqSeekMath.pas',
   ULongqReadingLayout in 'base\ULongqReadingLayout.pas',
+  ULongqTagMatch    in 'base\ULongqTagMatch.pas',
   UEditorLyrics     in 'base\UEditorLyrics.pas',
   USkins            in 'base\USkins.pas',
   UThemes           in 'base\UThemes.pas',

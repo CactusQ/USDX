@@ -361,11 +361,12 @@ const
   ITabs:        array[0..1] of UTF8String = ('Off', 'On');
 
 const
-  ISorting:      array[0..10] of UTF8String = ('Edition', 'Genre', 'Language', 'Folder', 'Title', 'Artist', 'Artist2', 'Year', 'Year Reversed', 'Decade', 'Playlist');
+  ISorting:      array[0..13] of UTF8String = ('Edition', 'Genre', 'Language', 'Folder', 'Title', 'Artist', 'Artist2', 'Year', 'Year Reversed', 'Decade', 'Recently added', 'Most played', 'Popular', 'Playlist');
   ISongMenuMode: array[0..2] of UTF8String = ('Roulette', 'Chessboard', 'List');
 
 type
-  TSortingType = (sEdition, sGenre, sLanguage, sFolder, sTitle, sArtist, sArtist2, sYear, sYearReversed, sDecade);
+  TSortingType = (sEdition, sGenre, sLanguage, sFolder, sTitle, sArtist, sArtist2, sYear, sYearReversed, sDecade,
+    sRecent, sMostPlayed, sPopular); // longq 2026-11-15: library date, own play count, #POPULARITY
 
 const
   IShowScores:       array[0..2] of UTF8String  = ('Off', 'When exists', 'On');
@@ -505,7 +506,7 @@ var
   ISongMenuTranslated:         array[0..2] of UTF8String  = ('Roulette', 'Chessboard', 'List');
 
   //ISortingTranslated:          array[0..9] of UTF8String  = ('Edition', 'Genre', 'Language', 'Folder', 'Title', 'Artist', 'Artist2', 'Year', 'Decade', 'Playlist');
-  ISortingTranslated:          array[0..9] of UTF8String  = ('Edition', 'Genre', 'Language', 'Folder', 'Title', 'Artist', 'Artist2', 'Year', 'Year Reversed', 'Decade');
+  ISortingTranslated:          array[0..12] of UTF8String  = ('Edition', 'Genre', 'Language', 'Folder', 'Title', 'Artist', 'Artist2', 'Year', 'Year Reversed', 'Decade', 'Recently added', 'Most played', 'Popular');
 
   IShowScoresTranslated:       array[0..2] of UTF8String  = ('Off', 'WhenExists', 'On');
 
@@ -719,6 +720,10 @@ begin
   ISortingTranslated[7]               := ULanguage.Language.Translate('OPTION_VALUE_YEAR');
   ISortingTranslated[8]               := ULanguage.Language.Translate('OPTION_VALUE_YEAR_REVERSED');
   ISortingTranslated[9]               := ULanguage.Language.Translate('OPTION_VALUE_DECADE');
+  // longq sorts: plain English (no translation keys in the language files)
+  ISortingTranslated[10]              := 'Recently added';
+  ISortingTranslated[11]              := 'Most played';
+  ISortingTranslated[12]              := 'Popular';
   //ISortingTranslated[10]               := ULanguage.Language.Translate('OPTION_VALUE_PLAYLIST');
 
   IShowScoresTranslated[0]            := ULanguage.Language.Translate('OPTION_VALUE_OFF');
@@ -1587,6 +1592,8 @@ begin
 
   // Song Sorting
   Sorting := ReadArrayIndex(ISorting, IniFile, 'Game', 'Sorting', Ord(sArtist));
+  if (Sorting < 0) or (Sorting > Ord(High(TSortingType))) then // longq: 'Playlist' is no sort mode
+    Sorting := Ord(sArtist);
 
   // Show Score
   ShowScores := ReadArrayIndex(IShowScores, IniFile, 'Game', 'ShowScores', IGNORE_INDEX, 'On');

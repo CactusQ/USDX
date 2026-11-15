@@ -61,9 +61,12 @@ uses
   UPlaylist,
   USong,
   UIni,
-  UCatCovers;
+  UCatCovers,
+  ULongqTagMatch;
 
 type
+  TLqCountArray = array of integer;
+
   TSongFilter = (
     fltAll,
     fltTitle,
@@ -140,6 +143,9 @@ type
     function VisibleIndex(Index: integer): integer;         // returns visible song index (skips invisible)
 
     function SetFilter(FilterStr: UTF8String; Filter: TSongFilter): cardinal;
+    { longq: tags matching Query (prefix, see ULongqTagMatch) over all song-list entries, most songs first;
+      Counts[i] = number of entries carrying Names[i]. At most Max rows. }
+    procedure LongqTagSuggest(const Query: UTF8String; Max: integer; out Names: TLqTagArray; out Counts: TLqCountArray);
   end;
 
 var
@@ -173,6 +179,7 @@ uses
   UNote,
   UFilesystem,
   ULongqVersions,
+  UDataBase,
   UUnicodeUtils;
 
 var
@@ -505,9 +512,11 @@ begin
   Result := UTF8CompareText(TSong(Song1).Edition, TSong(Song2).Edition);
 end;
 
+function LongqPrimaryGenre(S: TSong): UTF8String; forward;
+
 function CompareByGenre(Song1, Song2: Pointer): integer;
 begin
-  Result := UTF8CompareText(TSong(Song1).Genre, TSong(Song2).Genre);
+  Result := UTF8CompareText(LongqPrimaryGenre(TSong(Song1)), LongqPrimaryGenre(TSong(Song2)));
 end;
 
 function CompareByTitle(Song1, Song2: Pointer): integer;
@@ -546,6 +555,46 @@ begin
     Result := 0;
 end;
 
+// longq sorts (operator 2026-11-15): newest first, most played first, most popular first.
+// MergeSort contract here: 1 = Song1 goes after Song2.
+function CompareByRecent(Song1, Song2: Pointer): integer;
+begin
+  if (TSong(Song1).LongqAdded < TSong(Song2).LongqAdded) then
+    Result := 1
+  else
+    Result := 0;
+end;
+
+function CompareByPlays(Song1, Song2: Pointer): integer;
+begin
+  if (TSong(Song1).LongqPlays < TSong(Song2).LongqPlays) then
+    Result := 1
+  else
+    Result := 0;
+end;
+
+function CompareByPopularity(Song1, Song2: Pointer): integer;
+begin
+  if (TSong(Song1).LongqPop < TSong(Song2).LongqPop) then
+    Result := 1
+  else
+    Result := 0;
+end;
+
+// longq: genre sort/tabs group by the PRIMARY genre (first #TAGS entry, else the first #GENRE line):
+// K-pop charts carry two #GENRE lines (K-Pop + Kpop, for search) that must not make their own group
+function LongqPrimaryGenre(S: TSong): UTF8String;
+var
+  P: integer;
+begin
+  if Length(S.LongqTags) > 0 then
+    Exit(S.LongqTags[0]);
+  Result := S.Genre;
+  P := LastDelimiter(',', Result); // several #GENRE lines join as "B,A": A is the first line
+  if P > 0 then
+    Result := Trim(Copy(Result, P + 1, Length(Result)));
+end;
+
 procedure TSongs.Sort(Order: TSortingType);
 var
   CompareFunc: TListSortCompare;
@@ -572,6 +621,12 @@ begin
       CompareFunc := CompareByYearReversed;
     sDecade: // by Decade
       CompareFunc := CompareByYear;
+    sRecent:
+      CompareFunc := CompareByRecent;
+    sMostPlayed:
+      CompareFunc := CompareByPlays;
+    sPopular:
+      CompareFunc := CompareByPopularity;
     else
       Log.LogCritical('Unsupported comparison', 'TSongs.Sort');
       Exit; // suppress warning
@@ -633,7 +688,74 @@ begin
         Songs.Sort(sArtist);
         Songs.Sort(sYear);
       end;
+    sRecent: begin
+        Songs.Sort(sTitle);
+        Songs.Sort(sArtist);
+        Songs.Sort(sRecent);
+      end;
+    sMostPlayed: begin
+        Songs.Sort(sTitle);
+        Songs.Sort(sArtist);
+        Songs.Sort(sPopular);  // ties (most songs: never played) by popularity
+        Songs.Sort(sMostPlayed);
+      end;
+    sPopular: begin
+        Songs.Sort(sTitle);
+        Songs.Sort(sArtist);
+        Songs.Sort(sPopular);
+      end;
   end; // case
+end;
+
+procedure LongqSumGroupPlays(SongList: TList);
+var
+  I, K, Sum: integer;
+  S: TSong;
+begin
+  for I := 0 to SongList.Count - 1 do
+  begin
+    S := TSong(SongList[I]);
+    if S.VersionHidden or (Length(S.VersionGroup) = 0) then
+      Continue;
+    Sum := 0;
+    for K := 0 to High(S.VersionGroup) do
+      Inc(Sum, S.VersionGroup[K].LongqPlays);
+    for K := 0 to High(S.VersionGroup) do
+      S.VersionGroup[K].LongqPlays := Sum;
+  end;
+end;
+
+function LongqSortCategory(S: TSong; Order: TSortingType): UTF8String;
+begin
+  case Order of
+    sRecent:
+      if S.LongqAdded > 0 then
+        Result := FormatDateTime('yyyy-mm', S.LongqAdded)
+      else
+        Result := 'Unknown';
+    sMostPlayed:
+      if S.LongqPlays >= 10 then
+        Result := 'Played 10+'
+      else if S.LongqPlays >= 3 then
+        Result := 'Played 3-9'
+      else if S.LongqPlays >= 1 then
+        Result := 'Played 1-2'
+      else
+        Result := 'Never played';
+    sPopular:
+      if S.LongqPop >= 80 then
+        Result := 'Popular 80-100'
+      else if S.LongqPop >= 60 then
+        Result := 'Popular 60-79'
+      else if S.LongqPop >= 40 then
+        Result := 'Popular 40-59'
+      else if S.LongqPop >= 1 then
+        Result := 'Popular 1-39'
+      else
+        Result := 'Popularity unknown';
+  else
+    Result := '';
+  end;
 end;
 
 procedure TCatSongs.Refresh;
@@ -678,6 +800,14 @@ var
 
 begin
   CatNumShow  := -1;
+
+  // longq: own play counts for "Most played" (summed over a song's charts after grouping, see below)
+  if (TSortingType(Ini.Sorting) = sMostPlayed) and Assigned(DataBase) then
+  begin
+    DataBase.LongqReadPlays(Songs.SongList);
+    LongqGroupVersions(Songs.SongList);
+    LongqSumGroupPlays(Songs.SongList);
+  end;
 
   SortSongs();
 
@@ -724,9 +854,9 @@ begin
         end;
 
         sGenre: begin
-          if (CompareText(CurCategory, CurSong.Genre) <> 0) then
+          if (CompareText(CurCategory, LongqPrimaryGenre(CurSong)) <> 0) then
           begin
-            CurCategory := CurSong.Genre;
+            CurCategory := LongqPrimaryGenre(CurSong);
             // add Genre Button
             AddCategoryButton(CurCategory);
           end;
@@ -856,6 +986,15 @@ begin
              CurCategory := tmpCategory;
 
              // add Category Button
+             AddCategoryButton(CurCategory);
+           end;
+        end;
+
+        sRecent, sMostPlayed, sPopular: begin // longq
+           tmpCategory := LongqSortCategory(CurSong, TSortingType(Ini.Sorting));
+           if (tmpCategory <> CurCategory) then
+           begin
+             CurCategory := tmpCategory;
              AddCategoryButton(CurCategory);
            end;
         end;
@@ -1106,11 +1245,19 @@ begin
             TmpString := Song[i].TagsASCII;
         end;
         Song[i].Visible := true;
-        // Look for every searched word
+        // Look for every searched word. longq: a word also matches the song's tags (prefix, case/space/
+        // hyphen-insensitive: "kpop" finds K-pop, "top1" finds Karaoke Top100); "#Tag_Name" = exact tag only
         for J := 0 to High(WordArray) do
         begin
-          Song[i].Visible := Song[i].Visible and
-                             UTF8ContainsStr(TmpString, WordArray[J])
+          if (WordArray[J] <> '') and (WordArray[J][1] = '#') then
+            Song[i].Visible := Song[i].Visible and LqWordMatchesTags(WordArray[J], Song[i].LongqTags)
+          else if Filter in [fltAll, fltTags, fltGenre] then
+            Song[i].Visible := Song[i].Visible and
+                               (UTF8ContainsStr(TmpString, WordArray[J]) or
+                                LqWordMatchesTags(WordArray[J], Song[i].LongqTags))
+          else
+            Song[i].Visible := Song[i].Visible and
+                               UTF8ContainsStr(TmpString, WordArray[J])
         end;
         if Song[i].Visible then
           Inc(Result);
@@ -1130,6 +1277,62 @@ begin
     Result := 0;
   end;
   ResetVisibleIndexCache;
+end;
+
+procedure TCatSongs.LongqTagSuggest(const Query: UTF8String; Max: integer; out Names: TLqTagArray; out Counts: TLqCountArray);
+var
+  All: TLqTagArray;
+  N: TLqCountArray;
+  I, J, K: integer;
+  T: UTF8String;
+  C: integer;
+begin
+  SetLength(All, 0);
+  SetLength(N, 0);
+  for I := 0 to High(Song) do
+  begin
+    if Song[I].Main then
+      Continue;
+    for J := 0 to High(Song[I].LongqTags) do
+    begin
+      T := Song[I].LongqTags[J];
+      if not LqTagPrefixMatch(T, Query) then
+        Continue;
+      K := 0;
+      while (K <= High(All)) and not LqTagEqual(All[K], T) do
+        Inc(K);
+      if K > High(All) then
+      begin
+        SetLength(All, K + 1);
+        SetLength(N, K + 1);
+        All[K] := T;
+        N[K] := 0;
+      end;
+      Inc(N[K]);
+    end;
+  end;
+  // most songs first, then name (insertion sort, a few dozen tags)
+  for I := 1 to High(All) do
+  begin
+    T := All[I];
+    C := N[I];
+    J := I - 1;
+    while (J >= 0) and ((N[J] < C) or ((N[J] = C) and (UTF8CompareText(All[J], T) > 0))) do
+    begin
+      All[J + 1] := All[J];
+      N[J + 1] := N[J];
+      Dec(J);
+    end;
+    All[J + 1] := T;
+    N[J + 1] := C;
+  end;
+  if Length(All) > Max then
+  begin
+    SetLength(All, Max);
+    SetLength(N, Max);
+  end;
+  Names := All;
+  Counts := N;
 end;
 
 // -----------------------------------------------------------------------------

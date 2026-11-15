@@ -684,6 +684,24 @@ end;
 
 // Method for input parsing. If false is returned, GetNextWindow
 // should be checked to know the next window to load;
+function LongqCardTags(S: TSong; const YearText: UTF8String): UTF8String;
+var
+  I: integer;
+begin
+  Result := YearText;
+  for I := 0 to High(S.LongqTags) do
+  begin
+    if I >= 3 then
+      Break;
+    if Result = '' then
+      Result := S.LongqTags[I]
+    else if I = 0 then
+      Result := Result + '  ·  ' + S.LongqTags[I]
+    else
+      Result := Result + ', ' + S.LongqTags[I];
+  end;
+end;
+
 function TScreenSong.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
 var
   I:      integer;
@@ -2335,6 +2353,8 @@ begin
           Text[TextYear].Text  :=  InttoStr(CatSongs.Song[Interaction].Year)
       else
         Text[TextYear].Text  :=  '';
+      // longq: up to 3 tags, small, next to the year (operator 2026-11-15 "tag shown small on the song card")
+      Text[TextYear].Text := LongqCardTags(CatSongs.Song[Interaction], Text[TextYear].Text);
     end;
 
     HideDuetElements;

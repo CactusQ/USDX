@@ -129,6 +129,8 @@ type
       procedure Init(const Filename: IPath);
       procedure ConvertFrom101To110();
       procedure ReadScore(Song: TSong; Count: integer = 5);
+      { longq: TimesPlayed of every chart into Song.LongqPlays (matched by artist + title, case-insensitive) }
+      procedure LongqReadPlays(SongList: TList);
       procedure AddScore(Song: TSong; Level, TrackCount, TrackMask: integer; const Name: UTF8String; Score: integer);
       procedure WriteScore(Song: TSong);
 
@@ -577,6 +579,45 @@ end;
 (**
  * Read Scores into SongArray
  *)
+procedure TDataBaseSystem.LongqReadPlays(SongList: TList);
+var
+  TableData: TSQLiteUniTable;
+  Counts: TStringList;
+  I, K: integer;
+  S: TSong;
+begin
+  for I := 0 to SongList.Count - 1 do
+    TSong(SongList[I]).LongqPlays := 0;
+  if not Assigned(ScoreDB) then
+    Exit;
+  Counts := TStringList.Create;
+  TableData := nil;
+  try
+    Counts.Sorted := true;
+    Counts.Duplicates := dupIgnore;
+    TableData := ScoreDB.GetUniTable('SELECT [Artist], [Title], [TimesPlayed] FROM [' + cUS_Songs + '];');
+    while not TableData.EOF do
+    begin
+      K := TableData.FieldAsInteger(TableData.FieldIndex['TimesPlayed']);
+      if K > 0 then
+        Counts.AddObject(UTF8LowerCase(TableData.FieldByName['Artist'] + #9 + TableData.FieldByName['Title']), TObject(PtrInt(K)));
+      TableData.Next;
+    end;
+    for I := 0 to SongList.Count - 1 do
+    begin
+      S := TSong(SongList[I]);
+      K := Counts.IndexOf(UTF8LowerCase(S.Artist + #9 + S.Title));
+      if K >= 0 then
+        S.LongqPlays := integer(PtrInt(Counts.Objects[K]));
+    end;
+  except
+    on E: Exception do
+      Log.LogError(E.Message, 'TDataBaseSystem.LongqReadPlays');
+  end;
+  TableData.Free;
+  Counts.Free;
+end;
+
 procedure TDataBaseSystem.ReadScore(Song: TSong; Count: integer);
 var
   TableData:  TSQLiteUniTable;
