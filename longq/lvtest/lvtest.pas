@@ -71,7 +71,9 @@ begin
   Check('strip [VIDEO]', LVStripSuffix('Numb [VIDEO]', W), 'Numb');
   SetLength(L, 2); L[0] := 'AI'; L[1] := 'AI Studio';
   LVPickerLabels(L);
-  Check('picker MV/studio', L[0] + '|' + L[1], 'MV audio|Studio audio');
+  Check('picker MV/studio', L[0] + '|' + L[1], 'MV|Studio');
+  Check('order studio first', BoolToStr(LVOrderKey('AI Studio') < LVOrderKey('Original'), true), 'True');
+  Check('strip (Live)', LVStripSuffix('Lollipop (Live)', W), 'Lollipop');
   Check('short adlibs', LVShortLabel('AI Adlibs'), 'Adlibs only');
   Check('label multi', LVLabel(Info('LG', 'Shallow [MULTI]', '/s/Shallow', 'a.mp3', true)), 'Duet');
   A := nil;

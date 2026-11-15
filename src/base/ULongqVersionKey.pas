@@ -61,12 +61,12 @@ uses
   SysUtils;
 
 const
-  VERSION_WORDS: array[0..34] of string = (
+  VERSION_WORDS: array[0..35] of string = (
     'ai', 'romaji', 'romanized', 'romanization', 'romaja', 'roman', 'pinyin',
     'kanji', 'kana', 'hiragana', 'katakana', 'furigana', 'jp', 'japanese',
     'hangeul', 'hangul', #$ED#$95#$9C#$EA#$B8#$80 {한글}, 'hanzi', 'ch-s', 'ch-t',
     'fixed', 'pitch', 'key', 'time', 'both', 'multi', 'duet', 'duett', 'original', 'orig', 'native',
-    'adlib', 'adlibs', 'video', 'studio');
+    'adlib', 'adlibs', 'video', 'studio', 'live');
 
 function IsVersionWord(const W: string): boolean;
 var
@@ -187,6 +187,7 @@ begin
     'original', 'orig': Result := 'Original';
     'adlib', 'adlibs': Result := 'Adlibs';
     'studio': Result := 'Studio';
+    'live': Result := 'Live';
   else
     if W = VERSION_WORDS[16] then
       Result := 'Hangul'
@@ -270,7 +271,10 @@ end;
 
 function LVOrderKey(const ALabel: UTF8String): UTF8String;
 begin
-  if ALabel = 'Original' then
+  // operator 11-15: the studio-audio version is the default of a Studio / MV / Live group
+  if Pos('Studio', ALabel) > 0 then
+    Result := '!' + ALabel
+  else if ALabel = 'Original' then
     Result := '0'
   else if Copy(ALabel, 1, 8) = 'Original' then
     Result := '1' + ALabel
@@ -502,7 +506,8 @@ begin
     case W of
       'Duet': Duet := true;
       'Adlibs': Adlibs := true;
-      'Studio': Code := 'Studio audio';
+      'Studio': Code := 'Studio';
+      'Live': Code := 'Live';
       'Romaji': Rom := true;
       'reading': if Code <> '' then Rom := true;
       'furigana', 'Furigana': Extra := 'Furigana';
@@ -543,11 +548,12 @@ begin
   // studio-master chart next to the MV-audio chart (Niggas in Paris [Studio], 2026-11-15)
   HasStudio := false;
   for I := 0 to High(Labels) do
-    if Labels[I] = 'Studio audio' then
+    if (Labels[I] = 'Studio') or (Labels[I] = 'Live') then
       HasStudio := true;
+  // operator 11-15: picker labels exactly "Studio" / "MV" / "Live"
   for I := 0 to High(Labels) do
     if (Labels[I] = '') and HasStudio then
-      Labels[I] := 'MV audio';
+      Labels[I] := 'MV';
   Clash := false;
   for I := 0 to High(Labels) do
     if Labels[I] = '' then
