@@ -696,7 +696,7 @@ begin
     if Result = '' then
       Result := S.LongqTags[I]
     else if I = 0 then
-      Result := Result + '  ·  ' + S.LongqTags[I]
+      Result := Result + '  |  ' + S.LongqTags[I]
     else
       Result := Result + ', ' + S.LongqTags[I];
   end;
