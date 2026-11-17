@@ -1436,7 +1436,7 @@ begin
     end;
     CatSongs.SetFilter('', fltAll);
   end;
-  for Q in ['kpop', 'k-pop', 'top100', 'genz', 'rap', 'duet', 'hip'] do
+  for Q in ['kpop', 'k-pop', 'top100', 'top 1', 'genz', 'rap', 'duet', 'hip', 'classics', 'club', 'crowd'] do
   begin
     CatSongs.LongqTagSuggest(Q, 6, Names, Counts);
     Write('LIST "', Q, '":');
